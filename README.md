@@ -1,36 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Perfil Hito — Auditoría Académica
 
-## Getting Started
+Panel de análisis de rendimiento académico que lee un Google Sheet (una pestaña por materia) y genera dashboards, rankings y perfiles dinámicos por estudiante y por materia.
 
-First, run the development server:
+## Stack
 
-```bash
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind · googleapis
+
+## Cómo funciona
+
+POST /api/perfiles recibe { url } → extrae el spreadsheetId → autentica con keys.json → itera cada pestaña, parsea filas (Nombre, Correo, P1, P2, P3) → calcula estadísticas y perfiles → devuelve JSON. El cliente (app/page.tsx) orquesta estado y despacha a las vistas en components/.
+
+- Materias = nombre de cada pestaña (ignora Resumen, Config, Índice, Portada, Readme, Ayuda).
+- Escala autodetectada: máx ≤ 20 → escala 0-20, si no → 0-100. Umbrales: aprobado ≥ 70%, regular ≥ 50%.
+- Identidad de estudiante: por nombre (el correo puede venir vacío).
+- Análisis cualitativo se genera desde datos reales: mejor/peor materia, diff vs curso, tendencia P1→P3, desviación entre materias. Cada estudiante recibe textos distintos.
+
+## Estructura
+
+app/api/perfiles/route.ts   endpoint
+app/page.tsx                orquestador de estado
+lib/types.ts                tipos
+lib/utils.ts                cálculos (distribución, percentil, análisis materia×estudiante)
+components/                 vistas (dashboard/, profile/, ui)
+
+## Setup
+
+1. Google Cloud → habilitar Sheets API → crear Service Account → descargar clave JSON → renombrar a keys.json en la raíz.
+2. Compartir el Sheet con el client_email de keys.json (permiso Lector).
+3. Instalar y correr:
+
+git clone <repo> && cd perfil-hito
+npm install
+cp /ruta/clave.json ./keys.json
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+http://localhost:3000 → pegar URL del Sheet → Cargar Enlace.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Formato del Sheet
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Primera fila: headers. Debe haber columna con nombre/estudiante y opcionalmente correo/email. Si no se detectan, se usa N° / Nombre / Correo en índices 0, 1, 2.
+- Las primeras 3 columnas numéricas después de la columna 2 se leen como P1, P2, P3.
+- Una pestaña = una materia.
 
-## Learn More
+## Scripts
 
-To learn more about Next.js, take a look at the following resources:
+npm run dev      # desarrollo
+npm run build    # build
+npm start        # producción
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Troubleshooting
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Síntoma | Fix |
+|---|---|
+| 404 en /api/perfiles | Reiniciar npm run dev (Next no recompiló la ruta nueva) |
+| 500 con error | keys.json inválido o Sheet sin compartir con el service account |
+| Tablas vacías, stats cargan | Headers no matchean → renombrar o respetar orden de columnas |
 
-## Deploy on Vercel
+## Notas
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Sin persistencia: cada carga reemplaza el estado; no hay caché ni DB.
+- keys.json nunca se commitea — agregar a .gitignore.
+- Scope mínimo necesario: spreadsheets.readonly.
