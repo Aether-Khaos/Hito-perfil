@@ -20,11 +20,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'URL de Google Sheets no válida' }, { status: 400 });
     }
 
-    const spreadsheetId = match[1];
-    const auth = new google.auth.GoogleAuth({
-      keyFile: path.join(process.cwd(), 'keys.json'),
-      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-    });
+    const auth = process.env.GOOGLE_CREDENTIALS_JSON
+      ? new google.auth.GoogleAuth({
+          credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON),
+          scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+        })
+      : new google.auth.GoogleAuth({
+          keyFile: path.join(process.cwd(), 'keys.json'),
+          scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+        });
 
     const sheets = google.sheets({ version: 'v4', auth });
     const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
