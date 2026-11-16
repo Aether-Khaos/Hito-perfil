@@ -22,14 +22,43 @@ export default function Home() {
   const [buscoEstudiante, setBuscoEstudiante] = useState('');
   const [buscoPerfilMateria, setBuscoPerfilMateria] = useState('');
 
-  const analizarSheet = async (url: string) => {
+  const aplicarRespuesta = (data: ResultadoAuditoria & { error?: string }) => {
+    if (!data.success) {
+      alert('Error: ' + (data.error ?? 'Desconocido'));
+      return;
+    }
+    setResultado(data);
+    const materias = Object.keys(data.datosMaterias || {});
+    if (materias.length > 0) setMateriaActiva(materias[0]);
+    if (data.perfilesEstudiantes.length > 0) setEstudianteActivo(data.perfilesEstudiantes[0]);
+
+    // El perfil de competencias se calcula en el servidor y se conserva para la
+    // vista /diagnostico sin volver a consultar el libro.
+    try {
+      sessionStorage.setItem(
+        'perfil_hito_diagnostico',
+        JSON.stringify({
+          diagnosticos: data.diagnosticos ?? [],
+          resumenCurso: data.resumenCurso ?? [],
+          advertencias: data.advertencias ?? [],
+          hojas: data.hojasProcesadas ?? [],
+        }),
+      );
+    } catch {
+      /* sessionStorage puede estar deshabilitado: la vista de diagnóstico mostrará un aviso. */
+    }
+  };
+
+  const prepararAnalisis = () => {
     setLoading(true);
     setResultado(null);
-    // Reset de buscadores al cargar un nuevo Sheet
     setBuscoMateria('');
     setBuscoEstudiante('');
     setBuscoPerfilMateria('');
+  };
 
+  const analizarSheet = async (url: string) => {
+    prepararAnalisis();
     try {
       const res = await fetch('/api/perfiles', {
         method: 'POST',
@@ -37,33 +66,26 @@ export default function Home() {
         body: JSON.stringify({ url }),
       });
       const data: ResultadoAuditoria & { error?: string } = await res.json();
-      if (data.success) {
-        setResultado(data);
-        const materias = Object.keys(data.datosMaterias || {});
-        if (materias.length > 0) setMateriaActiva(materias[0]);
-        if (data.perfilesEstudiantes.length > 0) setEstudianteActivo(data.perfilesEstudiantes[0]);
-
-        // El perfil de competencias se calcula en el servidor y se conserva para la
-        // vista /diagnostico sin volver a consultar el libro.
-        try {
-          sessionStorage.setItem(
-            'perfil_hito_diagnostico',
-            JSON.stringify({
-              diagnosticos: data.diagnosticos ?? [],
-              resumenCurso: data.resumenCurso ?? [],
-              advertencias: data.advertencias ?? [],
-              hojas: data.hojasProcesadas ?? [],
-            }),
-          );
-        } catch {
-          /* sessionStorage puede estar deshabilitado: la vista de diagnóstico mostrará un aviso. */
-        }
-      } else {
-        alert('Error: ' + (data.error ?? 'Desconocido'));
-      }
+      aplicarRespuesta(data);
     } catch (err) {
       console.error(err);
       alert('Error de red al consultar el endpoint.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const analizarArchivo = async (archivo: File) => {
+    prepararAnalisis();
+    try {
+      const formulario = new FormData();
+      formulario.append('archivo', archivo);
+      const res = await fetch('/api/perfiles', { method: 'POST', body: formulario });
+      const data: ResultadoAuditoria & { error?: string } = await res.json();
+      aplicarRespuesta(data);
+    } catch (err) {
+      console.error(err);
+      alert('Error de red al subir el archivo.');
     } finally {
       setLoading(false);
     }
@@ -75,7 +97,7 @@ export default function Home() {
       <Header />
 
       <main className="relative z-10 w-full flex-1 px-4 sm:px-8 lg:px-16 py-10 max-w-[1700px] mx-auto space-y-8">
-        <SheetForm loading={loading} onSubmit={analizarSheet} />
+        <SheetForm loading={loading} onSubmit={analizarSheet} onArchivo={analizarArchivo} />
 
         {resultado && (
           <div className="space-y-6">

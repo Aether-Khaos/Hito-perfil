@@ -17,6 +17,7 @@
     "lib/texto.ts",
     "lib/catalogo-reactivos.ts",
     "lib/diagnostico.ts",
-    "lib/parser-libro.ts"
+    "lib/parser-libro.ts",
+    "lib/leer-xlsx.ts"
   ]
 }
