@@ -1,63 +1,72 @@
 # Perfil Hito — Auditoría Académica
 
-Panel de análisis de rendimiento académico que lee un Google Sheet (una pestaña por materia) y genera dashboards, rankings y perfiles dinámicos por estudiante y por materia.
+**[Ver demo en vivo](https://hito-perfil-hp8qczf2z-alexrosales-6169.vercel.app/)**
 
-## Stack
+## Qué es
 
-Next.js 16 (App Router) · React 19 · TypeScript · Tailwind · googleapis
+Plataforma de auditoría académica que transforma datos crudos de rendimiento estudiantil en inteligencia accionable. Ingiere información desde Google Sheets, la procesa mediante un pipeline de análisis estadístico y pedagógico, la persiste en una base de datos relacional y la expone a través de dashboards interactivos para tres perfiles de usuario: coordinación académica, docentes y estudiantes.
+
+## Para qué sirve
+
+- **Diagnóstico individual**: cada estudiante recibe un perfil con fortalezas, debilidades, proyecciones y plan de acción generados dinámicamente desde sus notas reales.
+- **Análisis comparativo**: rankings, percentiles, distribución por rangos y comparación contra el promedio del curso.
+- **Progresión longitudinal**: seguimiento de la evolución de cada estudiante a través de los hitos Inicial → Intermedio → Avanzado.
+- **Auditoría institucional**: identificación temprana de estudiantes en riesgo, materias críticas y tendencias globales por promoción.
 
 ## Cómo funciona
 
-POST /api/perfiles recibe { url } → extrae el spreadsheetId → autentica con keys.json → itera cada pestaña, parsea filas (Nombre, Correo, P1, P2, P3) → calcula estadísticas y perfiles → devuelve JSON. El cliente (app/page.tsx) orquesta estado y despacha a las vistas en components/.
+El sistema opera en cuatro fases:
 
-- Materias = nombre de cada pestaña (ignora Resumen, Config, Índice, Portada, Readme, Ayuda).
-- Escala autodetectada: máx ≤ 20 → escala 0-20, si no → 0-100. Umbrales: aprobado ≥ 70%, regular ≥ 50%.
-- Identidad de estudiante: por nombre (el correo puede venir vacío).
-- Análisis cualitativo se genera desde datos reales: mejor/peor materia, diff vs curso, tendencia P1→P3, desviación entre materias. Cada estudiante recibe textos distintos.
+1. **Ingesta**: un endpoint recibe la URL del Google Sheet, extrae el identificador del documento y se autentica contra la API de Google Sheets mediante una cuenta de servicio. Itera cada pestaña (una por materia), parsea las filas y normaliza los datos a un esquema canónico `{estudiante, correo, P1, P2, P3, promedio}`.
+2. **Procesamiento**: un motor de cálculo infiere la escala (0–20 o 0–100 según el máximo detectado), calcula estadísticas por materia (promedio, aprobados, regulares, en riesgo), construye perfiles individuales con análisis cualitativo generado a partir de los datos (mejor/peor materia, diferencia vs. curso, tendencia P1→P3, desviación entre materias) y genera proyecciones.
+3. **Persistencia**: los resultados se almacenan en una base de datos PostgreSQL serverless (Neon) con un esquema relacional normalizado que separa estudiantes, materias y notas, incluyendo metadatos de año y nivel de hito para permitir consultas históricas.
+4. **Presentación**: el frontend consume los datos desde endpoints que leen la base de datos, ofreciendo dashboards interactivos con visualizaciones SVG (gráficos de dona para distribución, gráficos de ondas secuenciales para progresión) y vistas segmentadas por materia, estudiante y comparativa.
 
-## Estructura
+## Arquitectura
 
-app/api/perfiles/route.ts   endpoint
-app/page.tsx                orquestador de estado
-lib/types.ts                tipos
-lib/utils.ts                cálculos (distribución, percentil, análisis materia×estudiante)
-components/                 vistas (dashboard/, profile/, ui)
+El sistema sigue una arquitectura **cliente-servidor desacoplada** con las siguientes capas:
 
-## Setup
+- **Capa de presentación**: aplicación Next.js 16 con App Router, componentes React 19, TypeScript estricto y Tailwind CSS. Renderizado híbrido (server components para estructura, client components para interactividad). Diseño responsive con sidebar desplegable y paleta académica funcional.
+- **Capa de API**: endpoints REST implementados como Route Handlers de Next.js. Tres rutas principales: ingesta de datos (`POST /api/perfiles`), consulta histórica (`GET /api/historial`) y progresión longitudinal (`GET /api/progresion`). Cada endpoint valida entrada, maneja errores y devuelve JSON tipado.
+- **Capa de dominio**: módulo de cálculo puro (sin dependencias de framework) que implementa la lógica estadística y pedagógica. Funciones puras, testeables y reutilizables tanto en backend como en frontend.
+- **Capa de persistencia**: PostgreSQL serverless (Neon) con driver HTTP (`@neondatabase/serverless`). Esquema relacional con integridad referencial, índices por año/nivel y operaciones por lote para minimizar latencia.
+- **Capa de integración externa**: cliente de Google Sheets API mediante `googleapis` con autenticación por cuenta de servicio y scope mínimo (`spreadsheets.readonly`).
 
-1. Google Cloud → habilitar Sheets API → crear Service Account → descargar clave JSON → renombrar a keys.json en la raíz.
-2. Compartir el Sheet con el client_email de keys.json (permiso Lector).
-3. Instalar y correr:
+**Patrones aplicados**: separación de responsabilidades por capas, stateless API, batch processing para operaciones de base de datos, type guards para validación en runtime, y renderizado progresivo con animaciones secuenciales.
 
-git clone <repo> && cd perfil-hito
-npm install
-cp /ruta/clave.json ./keys.json
-npm run dev
+## Stack técnico
 
-http://localhost:3000 → pegar URL del Sheet → Cargar Enlace.
-
-## Formato del Sheet
-
-- Primera fila: headers. Debe haber columna con nombre/estudiante y opcionalmente correo/email. Si no se detectan, se usa N° / Nombre / Correo en índices 0, 1, 2.
-- Las primeras 3 columnas numéricas después de la columna 2 se leen como P1, P2, P3.
-- Una pestaña = una materia.
-
-## Scripts
-
-npm run dev      # desarrollo
-npm run build    # build
-npm start        # producción
-
-## Troubleshooting
-
-| Síntoma | Fix |
+| Componente | Tecnología |
 |---|---|
-| 404 en /api/perfiles | Reiniciar npm run dev (Next no recompiló la ruta nueva) |
-| 500 con error | keys.json inválido o Sheet sin compartir con el service account |
-| Tablas vacías, stats cargan | Headers no matchean → renombrar o respetar orden de columnas |
+| Framework | Next.js 16 (App Router, Turbopack) |
+| UI | React 19, TypeScript, Tailwind CSS 4 |
+| Persistencia | Neon (PostgreSQL serverless) |
+| Integración | Google Sheets API v4 |
+| Autenticación | Service Account (Google Cloud) |
+| Deployment | Vercel |
+| Visualización | SVG nativo (sin librerías externas) |
 
-## Notas
+## Modelo de datos
 
-- Sin persistencia: cada carga reemplaza el estado; no hay caché ni DB.
-- keys.json nunca se commitea — agregar a .gitignore.
-- Scope mínimo necesario: spreadsheets.readonly.
+Esquema relacional normalizado en tercera forma normal:
+
+- **`estudiantes`**: identidad única por nombre, correo opcional, timestamps.
+- **`materias`**: catálogo de materias únicas.
+- **`notas`**: tabla de hechos con clave foránea compuesta (`estudiante_id`, `materia_id`, `evaluacion`), valor numérico, año y nivel de hito. Índices por año y nivel para consultas históricas eficientes.
+
+Las operaciones de escritura se realizan por lote mediante `unnest` para minimizar round-trips a la base de datos (de ~900 consultas individuales a ~6 consultas batch).
+
+## Seguridad
+
+- Credenciales gestionadas como variables de entorno en Vercel, nunca en el repositorio.
+- `.gitignore` configurado para excluir claves, archivos `.env` y artefactos de build.
+- Scope mínimo de Google API (`spreadsheets.readonly`).
+- Conexiones a base de datos con SSL obligatorio (`sslmode=require`).
+- Validación de tipos en runtime mediante type guards antes de procesar respuestas de API.
+
+## Escalabilidad
+
+- Arquitectura stateless: cada request es independiente, permitiendo escalado horizontal automático en Vercel.
+- Base de datos serverless con connection pooling y facturación por uso.
+- Procesamiento por lote para reducir latencia en operaciones masivas.
+- Componentes de visualización sin dependencias externas (SVG nativo), minimizando el bundle size.
