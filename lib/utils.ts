@@ -1,12 +1,14 @@
 import { FilaMateria, RangoDistribucion, PerfilEstudiante } from './types';
+import { UMBRAL_LOGRADO, nivelDeLogro } from './escala';
 
-export const fmt = (n: number, dec = 1) => (Number.isFinite(n) ? n.toFixed(dec) : '—');
+export const fmt = (n: number | null | undefined, dec = 1) =>
+  n !== null && n !== undefined && Number.isFinite(n) ? n.toFixed(dec) : '—';
 
 export function detectarEscala(filas: FilaMateria[], extras: number[] = []): number {
   const valores = [
     ...filas.flatMap((f) => [f.Promedio, f.P1, f.P2, f.P3]),
     ...extras,
-  ].filter(Number.isFinite);
+  ].filter((valor): valor is number => typeof valor === 'number' && Number.isFinite(valor));
   const max = valores.length ? Math.max(...valores) : 20;
   return max > 20 ? 100 : 20;
 }
@@ -15,7 +17,7 @@ export function filtrarFilas(filas: FilaMateria[], texto: string) {
   const t = texto.trim().toLowerCase();
   if (!t) return filas;
   return filas.filter(
-    (f) => f.Nombre.toLowerCase().includes(t) || f.Correo.toLowerCase().includes(t)
+    (f) => f.Nombre.toLowerCase().includes(t) || (f.Correo ?? '').toLowerCase().includes(t),
   );
 }
 
@@ -23,26 +25,34 @@ export function ordenarPorPromedio(filas: FilaMateria[]) {
   return [...filas].sort((a, b) => b.Promedio - a.Promedio);
 }
 
+/**
+ * Distribución por niveles institucionales de la UAB (Inicio, Proceso, Logrado,
+ * Destacado, Excepcional). Antes se usaban cortes propios (0/40/60/70/85/100)
+ * que no coincidían con la escala oficial del informe de evaluación.
+ */
 export function calcularDistribucion(filas: FilaMateria[], scaleMax?: number): RangoDistribucion[] {
-  if (!filas.length) return [];
-  const detected = scaleMax ?? detectarEscala(filas);
-  const cuts = [0, 0.4, 0.6, 0.7, 0.85, 1];
-  const colors = ['rose', 'amber', 'yellow', 'cyan', 'emerald'] as const;
-  const rangos: RangoDistribucion[] = cuts.slice(0, -1).map((from, i) => {
-    const min = detected * from;
-    const max = detected * cuts[i + 1];
-    const esUltimo = i === cuts.length - 2;
-    return {
-      label: `${Math.round(min)}-${Math.round(max)}`,
-      min, max: esUltimo ? max : max - 0.001,
-      count: 0, color: colors[i],
-    };
-  });
-  filas.forEach((f) => {
-    const r = rangos.find((rg) => f.Promedio >= rg.min && f.Promedio <= rg.max);
-    if (r) r.count += 1;
-  });
-  return rangos;
+  const colores: RangoDistribucion['color'][] = ['rose', 'amber', 'yellow', 'cyan', 'emerald'];
+  const niveles = [
+    { label: 'Inicio', min: 0, max: 30 },
+    { label: 'Proceso', min: 31, max: 50 },
+    { label: 'Logrado', min: 51, max: 70 },
+    { label: 'Destacado', min: 71, max: 89 },
+    { label: 'Excepcional', min: 90, max: 100 },
+  ];
+
+  const escala = scaleMax && scaleMax > 0 ? scaleMax : 100;
+  const aPorcentaje = (valor: number) => (valor / escala) * 100;
+  const aEscala = (valor: number) => Number(((valor / 100) * escala).toFixed(1));
+
+  return niveles.map((nivel, indice) => ({
+    label: nivel.label,
+    min: aEscala(nivel.min),
+    max: aEscala(nivel.max),
+    count: filas.filter(
+      (fila) => nivelDeLogro(aPorcentaje(fila.Promedio)).etiqueta === nivel.label,
+    ).length,
+    color: colores[indice],
+  }));
 }
 
 export function obtenerMejorPeor(filas: FilaMateria[]) {
@@ -51,13 +61,28 @@ export function obtenerMejorPeor(filas: FilaMateria[]) {
   return { mejor: ord[0], peor: ord[ord.length - 1] };
 }
 
+/** Promedio por evaluación ignorando las evaluaciones sin nota (no las cuenta como cero). */
 export function promediosEvaluaciones(filas: FilaMateria[]) {
-  const n = filas.length || 1;
-  return {
-    p1: filas.reduce((a, f) => a + (f.P1 || 0), 0) / n,
-    p2: filas.reduce((a, f) => a + (f.P2 || 0), 0) / n,
-    p3: filas.reduce((a, f) => a + (f.P3 || 0), 0) / n,
+  const media = (clave: 'P1' | 'P2' | 'P3') => {
+    const valores = filas
+      .map((fila) => fila[clave])
+      .filter((valor): valor is number => typeof valor === 'number' && Number.isFinite(valor));
+    return valores.length ? valores.reduce((a, b) => a + b, 0) / valores.length : 0;
   };
+  return { p1: media('P1'), p2: media('P2'), p3: media('P3') };
+}
+
+/** Convierte un valor posiblemente nulo en número (0 cuando no hay dato). */
+function numero(valor: number | null | undefined): number {
+  return typeof valor === 'number' && Number.isFinite(valor) ? valor : 0;
+}
+
+/** Media de una dimensión en el curso, ignorando las evaluaciones sin nota. */
+function mediaCurso(filas: FilaMateria[], clave: 'P1' | 'P2' | 'P3'): number {
+  const valores = filas
+    .map((fila) => fila[clave])
+    .filter((valor): valor is number => typeof valor === 'number' && Number.isFinite(valor));
+  return valores.length ? valores.reduce((a, b) => a + b, 0) / valores.length : 0;
 }
 
 export function rangoPosiciones(estudiantes: PerfilEstudiante[]) {
@@ -118,13 +143,16 @@ export function analizarEstudianteEnMateria(
   const posicion = idx >= 0 ? idx + 1 : total;
   const percentil = total > 1 ? ((total - posicion) / (total - 1)) * 100 : 100;
 
-  const p1Curso = filasMateria.reduce((a, f) => a + f.P1, 0) / total;
-  const p2Curso = filasMateria.reduce((a, f) => a + f.P2, 0) / total;
-  const p3Curso = filasMateria.reduce((a, f) => a + f.P3, 0) / total;
+  const p1Curso = mediaCurso(filasMateria, 'P1');
+  const p2Curso = mediaCurso(filasMateria, 'P2');
+  const p3Curso = mediaCurso(filasMateria, 'P3');
   const promedioCurso = (p1Curso + p2Curso + p3Curso) / 3;
   const diffVsCurso = data.promedio - promedioCurso;
 
-  const tendencia = data.p3 - data.p1;
+  const p1Est = numero(data.p1);
+  const p2Est = numero(data.p2);
+  const p3Est = numero(data.p3);
+  const tendencia = p3Est - p1Est;
   const tendenciaCurso = p3Curso - p1Curso;
   const tendenciaLabel =
     tendencia > 1 ? 'Mejora sostenida' :
@@ -132,9 +160,9 @@ export function analizarEstudianteEnMateria(
     'Rendimiento estable';
 
   const evals: Array<{ nombre: 'P1' | 'P2' | 'P3'; valor: number; deltaCurso: number }> = [
-    { nombre: 'P1', valor: data.p1, deltaCurso: data.p1 - p1Curso },
-    { nombre: 'P2', valor: data.p2, deltaCurso: data.p2 - p2Curso },
-    { nombre: 'P3', valor: data.p3, deltaCurso: data.p3 - p3Curso },
+    { nombre: 'P1', valor: p1Est, deltaCurso: p1Est - p1Curso },
+    { nombre: 'P2', valor: p2Est, deltaCurso: p2Est - p2Curso },
+    { nombre: 'P3', valor: p3Est, deltaCurso: p3Est - p3Curso },
   ];
   const mejorEval = [...evals].sort((a, b) => b.valor - a.valor)[0];
   const peorEval = [...evals].sort((a, b) => a.valor - b.valor)[0];
@@ -160,9 +188,9 @@ export function analizarEstudianteEnMateria(
     return texto;
   }
 
-  const explicacionP1 = explicarEval('P1', data.p1, p1Curso, null);
-  const explicacionP2 = explicarEval('P2', data.p2, p2Curso, data.p1);
-  const explicacionP3 = explicarEval('P3', data.p3, p3Curso, data.p2);
+  const explicacionP1 = explicarEval('P1', p1Est, p1Curso, null);
+  const explicacionP2 = explicarEval('P2', p2Est, p2Curso, p1Est);
+  const explicacionP3 = explicarEval('P3', p3Est, p3Curso, p2Est);
 
   // Diagnóstico global
   let diagnostico = `En ${materia} ocupas la posición #${posicion} de ${total} (percentil ${Math.round(percentil)}). `;
@@ -188,9 +216,8 @@ export function analizarEstudianteEnMateria(
   // Fortalezas / debilidades específicas
   const fortalezas: string[] = [];
   const debilidades: string[] = [];
-  const escalaCurso = promedioCurso > 20 ? 100 : 20;
-  const umbralApr = escalaCurso * 0.7;
-  const umbralReg = escalaCurso * 0.5;
+  const umbralApr = UMBRAL_LOGRADO;
+  const umbralReg = 31;
 
   if (percentil >= 85) fortalezas.push(`Top del curso: posición #${posicion}/${total}. Estás entre los mejores de ${materia}.`);
   else if (percentil >= 60) fortalezas.push(`Percentil ${Math.round(percentil)}: superas al ${Math.round(percentil)}% del curso en ${materia}.`);
@@ -200,14 +227,14 @@ export function analizarEstudianteEnMateria(
 
   fortalezas.push(`Tu evaluación más alta fue ${mejorEval.nombre} con ${mejorEval.valor.toFixed(1)} pts${mejorEval.deltaCurso > 0 ? ` (+${mejorEval.deltaCurso.toFixed(1)} vs el curso)` : ''}.`);
 
-  if (data.promedio >= umbralApr) fortalezas.push(`Promedio en zona de aprobación (${data.promedio.toFixed(1)} pts ≥ ${umbralApr.toFixed(1)}).`);
+  if (data.promedio >= umbralApr) fortalezas.push(`Promedio en nivel Logrado (${data.promedio.toFixed(1)} % ≥ ${umbralApr}).`);
 
   if (diffVsCurso < -1) debilidades.push(`${Math.abs(diffVsCurso).toFixed(1)} pts por debajo del promedio del curso — necesitas cerrar esa brecha.`);
   if (tendencia < -1) debilidades.push(`Retroceso de ${Math.abs(tendencia).toFixed(1)} pts entre P1 y P3. La curva va en bajada.`);
   if (peorEval.valor < peorEval.deltaCurso + peorEval.valor - 1) {
     debilidades.push(`${peorEval.nombre} fue tu punto más bajo (${peorEval.valor.toFixed(1)} pts)${peorEval.deltaCurso < 0 ? `, ${Math.abs(peorEval.deltaCurso).toFixed(1)} pts debajo del curso en esa misma evaluación` : ''}.`);
   }
-  if (data.promedio < umbralReg) debilidades.push(`Promedio en zona de riesgo (${data.promedio.toFixed(1)} pts < ${umbralReg.toFixed(1)}). Intervención urgente.`);
+  if (data.promedio < umbralReg) debilidades.push(`Promedio en nivel Inicio (${data.promedio.toFixed(1)} % < ${umbralReg}). Intervención urgente.`);
 
   if (fortalezas.length === 0) fortalezas.push(`Rendimiento dentro de lo esperado para ${materia}. Sin destacados particulares.`);
   if (debilidades.length === 0) debilidades.push(`Sin debilidades críticas en ${materia}.`);
@@ -228,8 +255,7 @@ export function analizarEstudianteEnMateria(
   }
   if (data.promedio < umbralReg) {
     planAccion.push(`Zona de riesgo: habla con el profesor esta semana. Un plan de recuperación temprano (antes del próximo examen) es mucho más efectivo que uno reactivo.`);
-  }
-  if (planAccion.length === 0) {
+  }  if (planAccion.length === 0) {
     planAccion.push(`Mantén la estrategia actual: estás estable y alineado con el curso. Para subir de nivel, incrementa la práctica autónoma y busca retroalimentación sobre tus ejercicios.`);
   }
 
@@ -243,7 +269,7 @@ export function analizarEstudianteEnMateria(
     posicion, total, percentil,
     promedioCurso, diffVsCurso,
     tendencia, tendenciaCurso, tendenciaLabel,
-    evaluaciones: { ...data },
+    evaluaciones: { p1: p1Est, p2: p2Est, p3: p3Est, promedio: data.promedio },
     promediosCurso: { p1: p1Curso, p2: p2Curso, p3: p3Curso },
     mejorEval, peorEval,
     explicacionP1, explicacionP2, explicacionP3,

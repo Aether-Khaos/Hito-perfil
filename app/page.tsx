@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 import { ResultadoAuditoria, SeccionActiva, PerfilEstudiante } from '@/lib/types';
 import { Background } from '@/components/Background';
 import { Header } from '@/components/Header';
@@ -41,6 +42,22 @@ export default function Home() {
         const materias = Object.keys(data.datosMaterias || {});
         if (materias.length > 0) setMateriaActiva(materias[0]);
         if (data.perfilesEstudiantes.length > 0) setEstudianteActivo(data.perfilesEstudiantes[0]);
+
+        // El perfil de competencias se calcula en el servidor y se conserva para la
+        // vista /diagnostico sin volver a consultar el libro.
+        try {
+          sessionStorage.setItem(
+            'perfil_hito_diagnostico',
+            JSON.stringify({
+              diagnosticos: data.diagnosticos ?? [],
+              resumenCurso: data.resumenCurso ?? [],
+              advertencias: data.advertencias ?? [],
+              hojas: data.hojasProcesadas ?? [],
+            }),
+          );
+        } catch {
+          /* sessionStorage puede estar deshabilitado: la vista de diagnóstico mostrará un aviso. */
+        }
       } else {
         alert('Error: ' + (data.error ?? 'Desconocido'));
       }
@@ -62,6 +79,19 @@ export default function Home() {
 
         {resultado && (
           <div className="space-y-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-xs text-slate-400">
+                {resultado.advertencias && resultado.advertencias.length > 0
+                  ? `${resultado.advertencias.length} advertencia(s) de calidad de datos: revisa el diagnóstico.`
+                  : 'Calificaciones normalizadas por los máximos de cada evaluación.'}
+              </div>
+              <Link
+                href="/diagnostico"
+                className="inline-flex items-center gap-2 self-start rounded-lg border border-sky-500/50 bg-sky-500/10 px-4 py-2 text-xs font-semibold text-sky-300 transition-colors hover:border-sky-400 hover:text-sky-200"
+              >
+                Ver diagnóstico por competencias →
+              </Link>
+            </div>
             <SectionNav activa={seccionActiva} onChange={setSeccionActiva} />
 
             {(seccionActiva === 'materia-dashboard' || seccionActiva === 'perfil-materia') && (
