@@ -109,6 +109,12 @@ export interface DiagnosticoEstudiante {
   narrativa: string;
 }
 
+/** Formatea un número con coma decimal (español), o un guion cuando no hay dato. */
+function n(valor: number | null | undefined, decimales = 1): string {
+  if (valor === null || valor === undefined || !Number.isFinite(valor)) return '—';
+  return valor.toFixed(decimales).replace('.', ',');
+}
+
 function estadoSegunPct(pct: number): EstadoReactivo {
   if (pct < 31) return 'no_logrado';
   if (pct < UMBRAL_LOGRADO) return 'parcial';
@@ -256,7 +262,7 @@ export function diagnosticarMateria(
             ),
             dominioPct: reactivo.pct,
             nivel: nivelDeLogro(reactivo.pct),
-            descripcion: `Dominio del ${reactivo.pct.toFixed(1)} % en «${reactivo.nombre}» (${reactivo.valor}/${reactivo.puntos} pts). ${reactivo.carencia}`,
+            descripcion: `Dominio del ${n(reactivo.pct)} % en «${reactivo.nombre}» (${reactivo.valor}/${reactivo.puntos} pts). ${reactivo.carencia}`,
             recomendacion: reactivo.accion,
             competencias: [reactivo.nombre],
           });
@@ -294,7 +300,7 @@ export function diagnosticarMateria(
         puntosEnRiesgo: Number((dimension.max - (valorNum ?? 0)).toFixed(1)),
         dominioPct: pct,
         nivel: nivelDeLogro(pct),
-        descripcion: `Dominio del ${pct.toFixed(1)} % en ${dimension.etiqueta} (${valorNum ?? 0}/${dimension.max} pts). La evidencia no permite separar el desempeño ítem por ítem; el ejercicio evalúa: ${dimension.reactivos
+        descripcion: `Dominio del ${n(pct)} % en ${dimension.etiqueta} (${valorNum ?? 0}/${dimension.max} pts). La evidencia no permite separar el desempeño ítem por ítem; el ejercicio evalúa: ${dimension.reactivos
           .map((r) => r.nombre)
           .join('; ')}.`,
         recomendacion:
@@ -303,7 +309,7 @@ export function diagnosticarMateria(
       });
     } else if (pct !== null && pct >= 71) {
       fortalezas.push(
-        `${dimension.etiqueta}: ${pct.toFixed(1)} % de dominio (${valorNum}/${dimension.max} pts), nivel ${nivelDeLogro(pct).etiqueta}.`,
+        `${dimension.etiqueta}: ${n(pct)} % de dominio (${valorNum}/${dimension.max} pts), nivel ${nivelDeLogro(pct).etiqueta}.`,
       );
     }
   }
@@ -334,14 +340,14 @@ function narrativaEstudiante(
   const nivel = nivelDeLogro(pctGlobal);
   const partes: string[] = [];
   partes.push(
-    `${nombre}: dominio global verificable del ${pctGlobal.toFixed(1)} % (nivel ${nivel.etiqueta}). ${nivel.descripcion}`,
+    `${nombre}: dominio global verificable del ${n(pctGlobal)} % (nivel ${nivel.etiqueta}). ${nivel.descripcion}`,
   );
 
   const evaluadas = materias.filter((m) => m.catalogada && m.promedio.evaluacionesConsideradas.length > 0);
   if (evaluadas.length > 0) {
     partes.push(
       `Se interpretaron ${evaluadas.length} asignatura(s) con el banco de reactivos del Hito Inicial: ${evaluadas
-        .map((m) => `${m.materia} (${m.pctGlobal.toFixed(1)} %)`)
+        .map((m) => `${m.materia} (${n(m.pctGlobal)} %)`)
         .join(', ')}.`,
     );
   }
@@ -356,7 +362,7 @@ function narrativaEstudiante(
   const principales = brechas.slice(0, 3);
   partes.push(
     `Carencias prioritarias: ${principales
-      .map((b) => `${b.nombre} en ${b.materia} (${b.puntosEnRiesgo} pts en riesgo)`)
+      .map((b) => `${b.nombre} en ${b.materia} (${n(b.puntosEnRiesgo)} pts en riesgo)`)
       .join('; ')}.`,
   );
 
