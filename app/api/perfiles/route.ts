@@ -19,6 +19,7 @@ export async function POST(request: Request) {
     if (!match) {
       return NextResponse.json({ success: false, error: 'URL de Google Sheets no válida' }, { status: 400 });
     }
+    const spreadsheetId = match[1];
 
     const auth = process.env.GOOGLE_CREDENTIALS_JSON
       ? new google.auth.GoogleAuth({
