@@ -1,26 +1,43 @@
 @import "tailwindcss";
 
+@source "../app/**/*.{ts,tsx}";
+@source "../components/**/*.{ts,tsx}";
+@source "../lib/**/*.{ts,tsx}";
+
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #000000;
+  --border: #d4d4d4;
+  --muted: #525252;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+html, body {
+  background: #ffffff;
+  color: #000000;
+  font-family: system-ui, -apple-system, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Inputs base */
+input, select, textarea {
+  background: #ffffff;
+  border: 1px solid #d4d4d4;
+  color: #000000;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: #a3a3a3;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
+}
+
+input::placeholder {
+  color: #737373;
+  opacity: 1;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

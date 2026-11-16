@@ -1,3 +1,5 @@
+'use client';
+
 interface Props {
   materias: string[];
   activa: string;
@@ -6,20 +8,23 @@ interface Props {
 
 export function MatterTabs({ materias, activa, onChange }: Props) {
   return (
-    <div className="flex flex-wrap gap-2">
-      {materias.map((m) => (
-        <button
-          key={m}
-          onClick={() => onChange(m)}
-          className={`px-4 py-2.5 rounded-lg font-mono text-xs transition cursor-pointer ${
-            activa === m
-              ? 'bg-cyan-500 text-slate-950 font-bold'
-              : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
-          }`}
-        >
-          {m}
-        </button>
-      ))}
+    <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+      {materias.map((m) => {
+        const isActive = m === activa;
+        return (
+          <button
+            key={m}
+            onClick={() => onChange(m)}
+            className={`px-3 py-1.5 rounded-lg text-sm border whitespace-nowrap transition-colors ${
+              isActive
+                ? 'bg-black text-white border-black'
+                : 'bg-white text-black border-neutral-300 hover:bg-neutral-100'
+            }`}
+          >
+            {m}
+          </button>
+        );
+      })}
     </div>
   );
 }

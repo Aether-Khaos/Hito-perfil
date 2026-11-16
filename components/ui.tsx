@@ -1,7 +1,9 @@
+'use client';
+
 interface SearchInputProps {
   value: string;
   onChange: (v: string) => void;
-  placeholder: string;
+  placeholder?: string;
   className?: string;
 }
 
@@ -12,39 +14,29 @@ export function SearchInput({ value, onChange, placeholder, className = '' }: Se
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className={`w-full sm:w-80 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-cyan-500 text-slate-200 ${className}`}
+      className={`w-full bg-white border border-neutral-300 text-black placeholder-neutral-400 rounded-lg px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none ${className}`}
     />
   );
 }
 
-type Tone = 'neutral' | 'cyan' | 'emerald' | 'rose';
-
-const valueTone: Record<Tone, string> = {
-  neutral: 'text-white',
-  cyan: 'text-cyan-400',
-  emerald: 'text-emerald-400',
-  rose: 'text-rose-400',
-};
-const labelTone: Record<Tone, string> = {
-  neutral: 'text-slate-400',
-  cyan: 'text-slate-400',
-  emerald: 'text-emerald-400',
-  rose: 'text-rose-400',
-};
-
-export function StatCard({
-  label,
-  value,
-  tone = 'neutral',
-}: {
+interface StatCardProps {
   label: string;
-  value: string;
-  tone?: Tone;
-}) {
+  value: string | number;
+  hint?: string;
+  tone?: 'default' | 'positive' | 'negative' | 'neutral';
+}
+
+export function StatCard({ label, value, hint, tone = 'default' }: StatCardProps) {
+  const toneColor =
+    tone === 'positive' ? 'text-emerald-700' :
+    tone === 'negative' ? 'text-rose-700' :
+    'text-black';
+
   return (
-    <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-xl space-y-1 shadow-lg">
-      <span className={`text-xs ${labelTone[tone]}`}>{label}</span>
-      <div className={`text-2xl font-bold ${valueTone[tone]}`}>{value}</div>
+    <div className="bg-white border border-neutral-300 rounded-xl p-4">
+      <p className="text-xs uppercase tracking-wide text-neutral-500">{label}</p>
+      <p className={`text-2xl font-semibold mt-1 ${toneColor}`}>{value}</p>
+      {hint && <p className="text-xs text-neutral-500 mt-1">{hint}</p>}
     </div>
   );
 }

@@ -1,3 +1,5 @@
+'use client';
+
 import { FilaMateria } from '@/lib/types';
 import { fmt } from '@/lib/utils';
 
@@ -7,37 +9,36 @@ interface Props {
 }
 
 export function RankingTable({ filas, showCorreo = true }: Props) {
-  if (!filas.length) {
-    return <div className="py-8 text-center text-slate-500 text-xs">No se encontraron registros.</div>;
-  }
   return (
-    <div className="overflow-x-auto pb-4 px-4">
-      <table className="w-full text-left border-collapse text-sm whitespace-nowrap">
-        <thead>
-          <tr className="bg-slate-950/80 border-b border-slate-800 text-slate-400 text-xs uppercase">
-            <th className="py-3 px-4">Puesto</th>
-            <th className="py-3 px-4">Estudiante</th>
-            {showCorreo && <th className="py-3 px-4">Correo</th>}
-            <th className="py-3 px-4 text-center">P1</th>
-            <th className="py-3 px-4 text-center">P2</th>
-            <th className="py-3 px-4 text-center">P3</th>
-            <th className="py-3 px-4 text-center">Promedio</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-800 text-xs">
-          {filas.map((f, idx) => (
-            <tr key={`${f.Correo}-${idx}`} className="hover:bg-slate-800/30">
-              <td className="py-3 px-4 text-cyan-400 font-bold">#{idx + 1}</td>
-              <td className="py-3 px-4 text-white font-medium">{f.Nombre}</td>
-              {showCorreo && <td className="py-3 px-4 text-slate-400">{f.Correo}</td>}
-              <td className="py-3 px-4 text-center text-slate-300">{fmt(f.P1)}</td>
-              <td className="py-3 px-4 text-center text-slate-300">{fmt(f.P2)}</td>
-              <td className="py-3 px-4 text-center text-slate-300">{fmt(f.P3)}</td>
-              <td className="py-3 px-4 text-center text-amber-400 font-bold">{fmt(f.Promedio)} pts</td>
+    <div className="bg-white border border-neutral-300 rounded-xl overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[600px]">
+          <thead>
+            <tr className="bg-neutral-100 text-black">
+              <th className="text-left px-4 py-2 font-medium">#</th>
+              <th className="text-left px-4 py-2 font-medium">Nombre</th>
+              {showCorreo && <th className="text-left px-4 py-2 font-medium">Correo</th>}
+              <th className="text-right px-4 py-2 font-medium">P1</th>
+              <th className="text-right px-4 py-2 font-medium">P2</th>
+              <th className="text-right px-4 py-2 font-medium">P3</th>
+              <th className="text-right px-4 py-2 font-medium">Promedio</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {filas.map((f, i) => (
+              <tr key={i} className="border-t border-neutral-200 hover:bg-neutral-50">
+                <td className="px-4 py-2 text-neutral-500">{i + 1}</td>
+                <td className="px-4 py-2 text-black font-medium">{f.Nombre}</td>
+                {showCorreo && <td className="px-4 py-2 text-neutral-500 truncate max-w-[180px]">{f.Correo || '—'}</td>}
+                <td className="px-4 py-2 text-right text-black">{fmt(f.P1)}</td>
+                <td className="px-4 py-2 text-right text-black">{fmt(f.P2)}</td>
+                <td className="px-4 py-2 text-right text-black">{fmt(f.P3)}</td>
+                <td className="px-4 py-2 text-right font-semibold text-black">{fmt(f.Promedio)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
