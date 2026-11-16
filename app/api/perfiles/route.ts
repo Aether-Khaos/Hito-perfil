@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
+import fs from 'node:fs';
 import path from 'path';
 import { google } from 'googleapis';
 import { CATALOGO_REACTIVOS, buscarMateria, maximosDe } from '@/lib/catalogo-reactivos';
 import { diagnosticarEstudiante, resumirCurso, type NotasMateria } from '@/lib/diagnostico';
 import { leerHoja, type FilaCruda, type HojaLeida } from '@/lib/parser-libro';
 import { leerLibroXlsx } from '@/lib/leer-xlsx';
+import { clasificarErrorGoogle, urlExportacion } from '@/lib/google-errores';
 import { UMBRAL_LOGRADO, nivelDeLogro } from '@/lib/escala';
 
 const PESTANAS_IGNORADAS = [
@@ -59,26 +61,64 @@ interface HojaCruda {
 }
 
 /** Hojas del libro publicado en Google Sheets. */
-async function hojasDesdeGoogle(url: unknown): Promise<HojaCruda[]> {
+async function hojasDesdeGoogle(url: unknown): Promise<{ hojas: HojaCruda[]; origen: string; avisos: string[] }> {
   const spreadsheetId = extraerIdHoja(url);
   if (!spreadsheetId) {
     throw new Error('Enlace no válido: se esperaba https://docs.google.com/spreadsheets/d/<id>.');
   }
 
-  const auth = credencialesGoogle();
-  const sheets = google.sheets({ version: 'v4', auth });
-  const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
-  const hojas = spreadsheet.data.sheets || [];
-  const resultado: HojaCruda[] = [];
+  const avisos: string[] = [];
+  const hayCredenciales = !!process.env.GOOGLE_CREDENTIALS_JSON || fs.existsSync(path.join(process.cwd(), 'keys.json'));
 
-  for (const hoja of hojas) {
-    const titulo = hoja.properties?.title || '';
-    if (!esPestanaMateria(titulo)) continue;
-    const respuesta = await sheets.spreadsheets.values.get({ spreadsheetId, range: titulo });
-    resultado.push({ titulo, filas: (respuesta.data.values || []) as FilaCruda[] });
+  if (hayCredenciales) {
+    try {
+      const auth = credencialesGoogle();
+      const sheets = google.sheets({ version: 'v4', auth });
+      const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+      const hojas = spreadsheet.data.sheets || [];
+      const resultado: HojaCruda[] = [];
+
+      for (const hoja of hojas) {
+        const titulo = hoja.properties?.title || '';
+        if (!esPestanaMateria(titulo)) continue;
+        const respuesta = await sheets.spreadsheets.values.get({ spreadsheetId, range: titulo });
+        resultado.push({ titulo, filas: (respuesta.data.values || []) as FilaCruda[] });
+      }
+
+      return { hojas: resultado, origen: 'cuenta-de-servicio', avisos };
+    } catch (error) {
+      const diagnostico = clasificarErrorGoogle(error instanceof Error ? error.message : String(error));
+      avisos.push(`${diagnostico.titulo}. ${diagnostico.instruccion}`);
+      // Si la cuenta de servicio no puede leerlo, se intenta la exportación pública.
+    }
+  } else {
+    avisos.push(
+      'No hay credenciales de Google configuradas: se intentó leer el libro por exportación pública.',
+    );
   }
 
-  return resultado;
+  const respuesta = await fetch(urlExportacion(spreadsheetId), { redirect: 'follow', cache: 'no-store' });
+  if (!respuesta.ok) {
+    throw new Error(
+      `No se pudo descargar el libro (HTTP ${respuesta.status}). Compártelo como «cualquiera con el enlace» o sube el archivo .xlsx.`,
+    );
+  }
+
+  const tipo = respuesta.headers.get('content-type') || '';
+  const buffer = Buffer.from(await respuesta.arrayBuffer());
+  if (tipo.includes('text/html') || buffer.subarray(0, 2).toString() !== 'PK') {
+    throw new Error(
+      'El libro no es público: Google devolvió la página de inicio de sesión. Compártelo como «cualquiera con el enlace» o sube el archivo .xlsx.',
+    );
+  }
+
+  const hojas = leerLibroXlsx(buffer).map((hoja) => ({
+    titulo: hoja.titulo,
+    filas: hoja.filas as FilaCruda[],
+  }));
+
+  avisos.push('El libro se leyó por exportación pública: conviene compartirlo con la cuenta de servicio para no depender del enlace abierto.');
+  return { hojas, origen: 'exportacion-publica', avisos };
 }
 
 /** Hojas de un archivo .xlsx subido desde el navegador. */
@@ -297,7 +337,8 @@ export async function POST(request: Request) {
   try {
     const tipo = request.headers.get('content-type') || '';
     let hojasCrudas: HojaCruda[];
-    let origen: 'google' | 'archivo';
+    let origen: string;
+    let avisosOrigen: string[] = [];
 
     if (tipo.includes('multipart/form-data')) {
       const formulario = await request.formData();
@@ -308,11 +349,14 @@ export async function POST(request: Request) {
       if (!cuerpo || typeof cuerpo !== 'object') {
         return NextResponse.json({ success: false, error: 'Cuerpo de la solicitud no válido.' }, { status: 400 });
       }
-      hojasCrudas = await hojasDesdeGoogle((cuerpo as { url?: string }).url);
-      origen = 'google';
+      const lectura = await hojasDesdeGoogle((cuerpo as { url?: string }).url);
+      hojasCrudas = lectura.hojas;
+      origen = lectura.origen;
+      avisosOrigen = lectura.avisos;
     }
 
     const resultado = procesarHojas(hojasCrudas);
+    resultado.advertencias = [...avisosOrigen, ...resultado.advertencias];
 
     if (resultado.hojasProcesadas.length === 0) {
       return NextResponse.json(
@@ -330,16 +374,17 @@ export async function POST(request: Request) {
     const mensaje = error instanceof Error ? error.message : 'Error desconocido';
     console.error('Error en la ingesta:', mensaje);
 
-    const esEnlace = /Enlace no válido/.test(mensaje);
-    const esGoogle = /Google Sheets API|API has not been used|PERMISSION_DENIED|401|403/.test(mensaje);
+    if (/Enlace no válido/.test(mensaje)) {
+      return NextResponse.json({ success: false, error: mensaje }, { status: 400 });
+    }
 
-    const pista = esGoogle
-      ? ' La cuenta de servicio no tiene la API de Google Sheets habilitada o el libro no está compartido con ella. Mientras lo resuelves, sube el archivo .xlsx directamente.'
-      : '';
-
+    // Los mensajes de esta ruta ya explican qué hacer; se devuelven tal cual.
     return NextResponse.json(
-      { success: false, error: `${esEnlace ? mensaje : 'No se pudo procesar el libro de calificaciones.'}${pista}` },
-      { status: esEnlace ? 400 : 500 },
+      {
+        success: false,
+        error: `${mensaje} También puedes subir el archivo .xlsx y analizarlo sin credenciales.`,
+      },
+      { status: 502 },
     );
   }
 }

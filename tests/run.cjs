@@ -10,3 +10,4 @@ require('./catalogo.test.cjs');
 require('./parser-libro.test.cjs');
 require('./diagnostico.test.cjs');
 require('./leer-xlsx.test.cjs');
+require('./google-errores.test.cjs');

@@ -18,6 +18,7 @@
     "lib/catalogo-reactivos.ts",
     "lib/diagnostico.ts",
     "lib/parser-libro.ts",
-    "lib/leer-xlsx.ts"
+    "lib/leer-xlsx.ts",
+    "lib/google-errores.ts"
   ]
 }

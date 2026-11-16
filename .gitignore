@@ -39,8 +39,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-keys.json
 
-# artefactos de trabajo
+# credenciales de Google (cuentas de servicio)
+keys.json
+hito-*.json
+*-service-account*.json
+
+# documentos de la entrega: no forman parte del sistema
+/entrega
+/entregables
+
+# artefactos locales de trabajo y de pruebas
 /_work
 /.pruebas

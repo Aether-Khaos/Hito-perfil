@@ -21,12 +21,14 @@ export default function Home() {
   const [buscoMateria, setBuscoMateria] = useState('');
   const [buscoEstudiante, setBuscoEstudiante] = useState('');
   const [buscoPerfilMateria, setBuscoPerfilMateria] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   const aplicarRespuesta = (data: ResultadoAuditoria & { error?: string }) => {
     if (!data.success) {
-      alert('Error: ' + (data.error ?? 'Desconocido'));
+      setError(data.error ?? 'No se pudo procesar el libro.');
       return;
     }
+    setError(null);
     setResultado(data);
     const materias = Object.keys(data.datosMaterias || {});
     if (materias.length > 0) setMateriaActiva(materias[0]);
@@ -52,6 +54,7 @@ export default function Home() {
   const prepararAnalisis = () => {
     setLoading(true);
     setResultado(null);
+    setError(null);
     setBuscoMateria('');
     setBuscoEstudiante('');
     setBuscoPerfilMateria('');
@@ -85,7 +88,7 @@ export default function Home() {
       aplicarRespuesta(data);
     } catch (err) {
       console.error(err);
-      alert('Error de red al subir el archivo.');
+      setError('Error de red al subir el archivo.');
     } finally {
       setLoading(false);
     }
@@ -98,6 +101,22 @@ export default function Home() {
 
       <main className="relative z-10 w-full flex-1 px-4 sm:px-8 lg:px-16 py-10 max-w-[1700px] mx-auto space-y-8">
         <SheetForm loading={loading} onSubmit={analizarSheet} onArchivo={analizarArchivo} />
+
+        {error && (
+          <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-xs leading-relaxed text-rose-100">
+            <div className="mb-1 flex items-start justify-between gap-3">
+              <p className="text-sm font-semibold text-rose-200">No se pudo cargar el libro</p>
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                className="rounded border border-rose-400/40 px-2 py-0.5 text-[10px] uppercase tracking-wide text-rose-200 hover:bg-rose-500/20"
+              >
+                Cerrar
+              </button>
+            </div>
+            <p className="whitespace-pre-wrap">{error}</p>
+          </div>
+        )}
 
         {resultado && (
           <div className="space-y-6">
