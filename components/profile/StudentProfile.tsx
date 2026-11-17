@@ -2,7 +2,14 @@
 import { useMemo, useState } from 'react';
 import { ResultadoAuditoria, PerfilEstudiante } from '@/lib/types';
 import {
-  calcularPercentil, promedioClase, rangoPosiciones, detectarEscala, fmt,
+  calcularPercentil,
+  promedioClase,
+  rangoPosiciones,
+  detectarEscala,
+  fmt,
+  RubricasMateria,
+  buscarRubricaPorMateria,
+  enriquecerPerfilGeneral,
 } from '@/lib/utils';
 import { SearchInput, StatCard } from '@/components/ui';
 import { MiniBar } from '@/components/DonutChart';
@@ -14,9 +21,17 @@ interface Props {
   busqueda: string;
   onBusquedaChange: (v: string) => void;
   onSelect: (est: PerfilEstudiante) => void;
+  rubricas?: Record<string, RubricasMateria>;
 }
 
-export function StudentProfile({ resultado, estudianteActivo, busqueda, onBusquedaChange, onSelect }: Props) {
+export function StudentProfile({
+  resultado,
+  estudianteActivo,
+  busqueda,
+  onBusquedaChange,
+  onSelect,
+  rubricas = {},
+}: Props) {
   const [materiaDetalle, setMateriaDetalle] = useState<string | null>(null);
 
   const todasLasFilas = useMemo(
@@ -49,6 +64,11 @@ export function StudentProfile({ resultado, estudianteActivo, busqueda, onBusque
   );
   const diff = estudianteActivo.promedioGeneral - promedioGrupal;
 
+  const perfilEnriquecido = useMemo(
+    () => enriquecerPerfilGeneral(estudianteActivo, rubricas),
+    [estudianteActivo, rubricas]
+  );
+
   const materiaEntries = Object.entries(estudianteActivo.materias);
   const mejorMateria = [...materiaEntries].sort((a, b) => b[1].promedio - a[1].promedio)[0];
   const peorMateria = [...materiaEntries].sort((a, b) => a[1].promedio - b[1].promedio)[0];
@@ -59,6 +79,7 @@ export function StudentProfile({ resultado, estudianteActivo, busqueda, onBusque
         resultado={resultado}
         estudiante={estudianteActivo}
         materia={materiaDetalle}
+        rubricasMateria={buscarRubricaPorMateria(rubricas, materiaDetalle)}
         onVolver={() => setMateriaDetalle(null)}
       />
     );
@@ -164,18 +185,18 @@ export function StudentProfile({ resultado, estudianteActivo, busqueda, onBusque
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-green-50 border border-green-200 rounded p-5 space-y-2">
                 <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide">Puntos Fuertes</h4>
-                <ul className="list-disc list-inside text-sm text-[#212529] space-y-1">
-                  {estudianteActivo.perfilGeneral.fortalezas.map((f, i) => <li key={i}>{f}</li>)}
-                  {estudianteActivo.perfilGeneral.fortalezas.length === 0 && (
+                <ul className="list-disc list-inside text-sm text-[#212529] space-y-1.5">
+                  {perfilEnriquecido.fortalezas.map((f, i) => <li key={i}>{f}</li>)}
+                  {perfilEnriquecido.fortalezas.length === 0 && (
                     <li className="text-[#6c757d] list-none">Sin fortalezas registradas.</li>
                   )}
                 </ul>
               </div>
               <div className="bg-amber-50 border border-amber-200 rounded p-5 space-y-2">
                 <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wide">Áreas de Mejora</h4>
-                <ul className="list-disc list-inside text-sm text-[#212529] space-y-1">
-                  {estudianteActivo.perfilGeneral.debilidades.map((d, i) => <li key={i}>{d}</li>)}
-                  {estudianteActivo.perfilGeneral.debilidades.length === 0 && (
+                <ul className="list-disc list-inside text-sm text-[#212529] space-y-1.5">
+                  {perfilEnriquecido.debilidades.map((d, i) => <li key={i}>{d}</li>)}
+                  {perfilEnriquecido.debilidades.length === 0 && (
                     <li className="text-[#6c757d] list-none">Sin debilidades registradas.</li>
                   )}
                 </ul>
@@ -186,7 +207,7 @@ export function StudentProfile({ resultado, estudianteActivo, busqueda, onBusque
             <div className="bg-blue-50 border border-blue-200 rounded p-5 space-y-2">
               <h4 className="text-xs font-bold text-[#1177d1] uppercase tracking-wide">Consecuencias en la Carrera</h4>
               <p className="text-sm text-[#212529] leading-relaxed">
-                {estudianteActivo.perfilGeneral.consecuencias || 'Sin observaciones.'}
+                {perfilEnriquecido.consecuencias || 'Sin observaciones.'}
               </p>
             </div>
 
@@ -205,6 +226,7 @@ export function StudentProfile({ resultado, estudianteActivo, busqueda, onBusque
                   const promedioMat = filas.length ? filas.reduce((a, f) => a + f.Promedio, 0) / filas.length : 0;
                   const diffMat = data.promedio - promedioMat;
                   const pos = filas.filter((f) => f.Promedio > data.promedio).length + 1;
+                  const tieneRubrica = Boolean(buscarRubricaPorMateria(rubricas, mat));
                   return (
                     <button
                       key={mat}
@@ -212,7 +234,14 @@ export function StudentProfile({ resultado, estudianteActivo, busqueda, onBusque
                       className="text-left bg-white border border-[#ced4da] hover:border-[#1177d1] p-4 rounded space-y-2 transition w-full"
                     >
                       <div className="flex justify-between items-center">
-                        <span className="text-[#212529] font-bold text-sm">{mat}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[#212529] font-bold text-sm">{mat}</span>
+                          {tieneRubrica && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-50 text-[#1177d1] border border-blue-200">
+                              Con temario
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[#1177d1] font-bold text-sm">{fmt(data.promedio)} pts</span>
                       </div>
                       <div className="flex justify-between items-center text-[11px] text-[#6c757d]">

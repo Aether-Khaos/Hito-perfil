@@ -1,7 +1,13 @@
 'use client';
 import { useMemo } from 'react';
 import { ResultadoAuditoria, PerfilEstudiante } from '@/lib/types';
-import { analizarEstudianteEnMateria, calcularDistribucion, fmt, ordenarPorPromedio } from '@/lib/utils';
+import {
+  analizarEstudianteEnMateria,
+  calcularDistribucion,
+  fmt,
+  RubricasMateria,
+  extraerTemaLimpio,
+} from '@/lib/utils';
 import { StatCard } from '@/components/ui';
 import { DonutChart } from '@/components/DonutChart';
 
@@ -9,19 +15,19 @@ interface Props {
   resultado: ResultadoAuditoria;
   estudiante: PerfilEstudiante;
   materia: string;
+  rubricasMateria?: RubricasMateria;
   onVolver: () => void;
 }
 
 const COLORES_RANGO = ['#b91c1c', '#ea580c', '#f59e0b', '#1177d1', '#15803d'];
 
-export function StudentMatterDetail({ resultado, estudiante, materia, onVolver }: Props) {
+export function StudentMatterDetail({ resultado, estudiante, materia, rubricasMateria, onVolver }: Props) {
   const filas = resultado.datosMaterias[materia] || [];
   const analisis = useMemo(
-    () => analizarEstudianteEnMateria(estudiante, materia, filas),
-    [estudiante, materia, filas]
+    () => analizarEstudianteEnMateria(estudiante, materia, filas, rubricasMateria),
+    [estudiante, materia, filas, rubricasMateria]
   );
   const distribucion = useMemo(() => calcularDistribucion(filas), [filas]);
-  const topCurso = useMemo(() => ordenarPorPromedio(filas).slice(0, 3), [filas]);
 
   if (!analisis) {
     return (
@@ -65,7 +71,9 @@ export function StudentMatterDetail({ resultado, estudiante, materia, onVolver }
                 <span className="text-[10px] font-bold text-[#6c757d] uppercase">Perfil Materia × Estudiante</span>
                 <h2 className="text-xl font-bold text-[#212529]">{estudiante.nombre}</h2>
                 <p className="text-xs text-[#6c757d]">{estudiante.correo}</p>
-                <p className="text-sm text-[#212529] mt-1">Materia: <strong className="text-[#1177d1]">{materia}</strong></p>
+                <p className="text-sm text-[#212529] mt-1">
+                  Materia: <strong className="text-[#1177d1]">{materia}</strong>
+                </p>
               </div>
             </div>
             <div className="text-left sm:text-right">
@@ -102,11 +110,11 @@ export function StudentMatterDetail({ resultado, estudiante, materia, onVolver }
             </div>
           </div>
 
-          {/* Donas por evaluación */}
+          {/* Donas por evaluación (solo muestra el tema evaluado, nunca el examen completo) */}
           <div className="bg-white border border-[#ced4da] rounded p-5 space-y-4">
             <h3 className="text-sm font-bold text-[#212529] uppercase tracking-wide flex items-center gap-2">
               <span className="w-1.5 h-4 bg-[#1177d1] rounded" />
-              Comparativo por Evaluación
+              Rendimiento por Pregunta / Evaluación
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {(['P1', 'P2', 'P3'] as const).map((pName) => {
@@ -115,34 +123,72 @@ export function StudentMatterDetail({ resultado, estudiante, materia, onVolver }
                 const curso = a.promediosCurso[key];
                 const diff = tuyo - curso;
                 const maxEscala = curso > 20 ? 100 : 20;
+                const temaObj = extraerTemaLimpio(rubricasMateria?.[key] || rubricasMateria?.general);
                 const segmentosEval = [
                   { label: 'Estudiante', value: tuyo, color: '#1177d1' },
                   { label: 'Resto del curso', value: Math.max(curso - tuyo, 0), color: '#6c757d' },
                   { label: 'Margen', value: Math.max(maxEscala - curso, 0), color: '#e9ecef' },
                 ];
                 return (
-                  <div key={pName} className="bg-[#f8f9fa] border border-[#ced4da] rounded p-4 space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-bold text-[#1177d1]">{pName}</span>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                        diff >= 1 ? 'bg-green-50 text-green-700 border-green-200'
-                        : diff <= -1 ? 'bg-red-50 text-red-700 border-red-200'
-                        : 'bg-amber-50 text-amber-700 border-amber-200'
-                      }`}>
-                        {diff >= 1 ? 'Supera' : diff <= -1 ? 'Por debajo' : 'Alineado'}
-                      </span>
+                  <div key={pName} className="bg-[#f8f9fa] border border-[#ced4da] rounded p-4 space-y-3 flex flex-col justify-between">
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-bold text-[#1177d1]">{pName}</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                          diff >= 1 ? 'bg-green-50 text-green-700 border-green-200'
+                          : diff <= -1 ? 'bg-red-50 text-red-700 border-red-200'
+                          : 'bg-amber-50 text-amber-700 border-amber-200'
+                        }`}>
+                          {diff >= 1 ? 'Le fue bien' : diff <= -1 ? 'A reforzar' : 'Alineado'}
+                        </span>
+                      </div>
+                      <DonutChart segmentos={segmentosEval} centroValue={fmt(tuyo)} centroLabel="Tú" size={140} thickness={20} />
+                      <div className="text-center text-[11px] text-[#6c757d]">
+                        Curso: <strong className="text-[#212529]">{fmt(curso)}</strong> · Diferencia:{' '}
+                        <strong className={diff >= 0 ? 'text-green-700' : 'text-red-700'}>
+                          {diff >= 0 ? '+' : ''}{fmt(diff)}
+                        </strong>
+                      </div>
                     </div>
-                    <DonutChart segmentos={segmentosEval} centroValue={fmt(tuyo)} centroLabel="Tú" size={140} thickness={20} />
-                    <div className="text-center text-[11px] text-[#6c757d]">
-                      Curso: <strong className="text-[#212529]">{fmt(curso)}</strong> · Diferencia:{' '}
-                      <strong className={diff >= 0 ? 'text-green-700' : 'text-red-700'}>
-                        {diff >= 0 ? '+' : ''}{fmt(diff)}
-                      </strong>
-                    </div>
+
+                    {temaObj && (
+                      <div className="pt-2 border-t border-[#ced4da] text-center">
+                        <span className="text-[10px] font-bold text-[#6c757d] uppercase block">
+                          Tema evaluado
+                        </span>
+                        <p className="text-xs font-semibold text-[#212529] mt-0.5">
+                          {temaObj.titulo}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
+          </div>
+
+          {/* Fortalezas y debilidades */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-green-50 border border-green-200 rounded p-5 space-y-2">
+              <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide">Preguntas donde le fue bien</h4>
+              <ul className="list-disc list-inside text-sm text-[#212529] space-y-1.5">
+                {a.fortalezas.map((f, i) => <li key={i}>{f}</li>)}
+              </ul>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded p-5 space-y-2">
+              <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wide">Preguntas donde le fue mal</h4>
+              <ul className="list-disc list-inside text-sm text-[#212529] space-y-1.5">
+                {a.debilidades.map((d, i) => <li key={i}>{d}</li>)}
+              </ul>
+            </div>
+          </div>
+
+          {/* Plan de acción */}
+          <div className="bg-red-50 border border-red-200 rounded p-5 space-y-2">
+            <h4 className="text-xs font-bold text-red-800 uppercase tracking-wide">Cómo debe reforzar</h4>
+            <ul className="list-disc list-inside text-sm text-[#212529] space-y-1.5">
+              {a.planAccion.map((p, i) => <li key={i}>{p}</li>)}
+            </ul>
           </div>
 
           {/* Distribución general + resumen */}
@@ -180,52 +226,6 @@ export function StudentMatterDetail({ resultado, estudiante, materia, onVolver }
             </div>
           </div>
 
-          {/* Fortalezas y debilidades */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-green-50 border border-green-200 rounded p-5 space-y-2">
-              <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide">Fortalezas en {materia}</h4>
-              <ul className="list-disc list-inside text-sm text-[#212529] space-y-1">
-                {a.fortalezas.map((f, i) => <li key={i}>{f}</li>)}
-              </ul>
-            </div>
-            <div className="bg-amber-50 border border-amber-200 rounded p-5 space-y-2">
-              <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wide">Debilidades en {materia}</h4>
-              <ul className="list-disc list-inside text-sm text-[#212529] space-y-1">
-                {a.debilidades.map((d, i) => <li key={i}>{d}</li>)}
-              </ul>
-            </div>
-          </div>
-
-          {/* Plan de acción */}
-          <div className="bg-red-50 border border-red-200 rounded p-5 space-y-2">
-            <h4 className="text-xs font-bold text-red-800 uppercase tracking-wide">Plan de Acción para {materia}</h4>
-            <ul className="list-disc list-inside text-sm text-[#212529] space-y-1">
-              {a.planAccion.map((p, i) => <li key={i}>{p}</li>)}
-            </ul>
-          </div>
-
-          {/* Top 3 */}
-          <div className="bg-white border border-[#ced4da] rounded p-5 space-y-3">
-            <h4 className="text-xs font-bold text-[#212529] uppercase tracking-wide flex items-center gap-2">
-              <span className="w-1.5 h-4 bg-amber-500 rounded" />
-              Top 3 del Curso en {materia}
-            </h4>
-            <div className="space-y-1">
-              {topCurso.map((f, i) => (
-                <div key={f.Nombre} className="flex justify-between items-center text-sm py-2 border-b border-[#e9ecef] last:border-0">
-                  <span className="text-[#212529]">
-                    <span className={`inline-block w-6 h-6 rounded-full text-xs font-bold text-center leading-6 mr-2 ${
-                      i === 0 ? 'bg-amber-100 text-amber-800' : i === 1 ? 'bg-gray-200 text-gray-700' : 'bg-orange-100 text-orange-800'
-                    }`}>{i + 1}</span>
-                    {f.Nombre}
-                    {f.Nombre === estudiante.nombre && <span className="text-[#1177d1] font-semibold ml-2">← tú</span>}
-                  </span>
-                  <span className="text-[#1177d1] font-bold">{fmt(f.Promedio)} pts</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
           {/* Otras materias */}
           <div className="bg-white border border-[#ced4da] rounded p-5 space-y-3">
             <h4 className="text-xs font-bold text-[#212529] uppercase tracking-wide flex items-center gap-2">
@@ -238,13 +238,13 @@ export function StudentMatterDetail({ resultado, estudiante, materia, onVolver }
                   <span className="text-[#212529]">{m.materia}</span>
                   <div className="flex items-center gap-3">
                     <span className="text-[#212529] font-semibold">{fmt(m.promedio)} pts</span>
-                    <span className={`text-[10px] font-semibold ${m.diff >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                      {m.diff >= 0 ? '+' : ''}{fmt(m.diff)} vs {materia}
+                    <span className={`text-xs font-bold ${m.diff >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                      {m.diff >= 0 ? '+' : ''}{fmt(m.diff)}
                     </span>
                   </div>
                 </div>
               )) : (
-                <p className="text-[#6c757d] text-sm">Este estudiante solo tiene registrada esta materia.</p>
+                <p className="text-xs text-[#6c757d]">No hay otras materias registradas para este estudiante.</p>
               )}
             </div>
           </div>

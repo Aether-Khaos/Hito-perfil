@@ -21,12 +21,74 @@ const COLORES_RANGO = ['#b91c1c', '#ea580c', '#f59e0b', '#1177d1', '#15803d'];
 
 export function MatterDashboard({ resultado, materiaActiva, busqueda, onBusquedaChange }: Props) {
   const stats = resultado.estadisticasMaterias[materiaActiva];
-  const filasBase = resultado.datosMaterias[materiaActiva] || [];
+  const filasCrudas = resultado.datosMaterias[materiaActiva] || [];
+
+  // Normalizar nota real por fila (si P1+P2+P3 suman <= 100, esa es la nota real; si vienen sobre 100 cada uno, promediar activos)
+  const filasBase = useMemo(() => {
+    const maxSuma = filasCrudas.reduce(
+      (max, f) => Math.max(max, (Number(f.P1) || 0) + (Number(f.P2) || 0) + (Number(f.P3) || 0)),
+      0
+    );
+    const sonParcialesIndependientes = maxSuma > 100.5;
+
+    return filasCrudas.map((f) => {
+      const p1 = Number(f.P1) || 0;
+      const p2 = Number(f.P2) || 0;
+      const p3 = Number(f.P3) || 0;
+      const suma = p1 + p2 + p3;
+
+      let notaReal = Number(f.Promedio) || 0;
+      if (suma > 0) {
+        if (sonParcialesIndependientes) {
+          const activos = [p1, p2, p3].filter((v) => v > 0);
+          notaReal = activos.length > 0 ? suma / activos.length : 0;
+        } else {
+          notaReal = suma;
+        }
+      }
+
+      return {
+        ...f,
+        Promedio: Number(notaReal.toFixed(1)),
+      };
+    });
+  }, [filasCrudas]);
 
   const filas = useMemo(() => ordenarPorPromedio(filtrarFilas(filasBase, busqueda)), [filasBase, busqueda]);
   const distribucion = useMemo(() => calcularDistribucion(filasBase), [filasBase]);
   const { mejor, peor } = useMemo(() => obtenerMejorPeor(filasBase), [filasBase]);
   const evals = useMemo(() => promediosEvaluaciones(filasBase), [filasBase]);
+
+  // Métricas sincronizadas directamente con filasBase para que coincidan al 100% con la dona
+  const resumenSincronizado = useMemo(() => {
+    const total = filasBase.length;
+    if (total === 0) {
+      return {
+        total: 0,
+        promedioGeneral: 0,
+        aprobados: 0,
+        enRiesgo: 0,
+        porcentajeAprobados: 0,
+        porcentajeRiesgo: 0,
+      };
+    }
+
+    const maxNota = Math.max(...filasBase.map((f) => f.Promedio), 0);
+    const notaMinima = maxNota > 20 ? 51 : 11;
+
+    const sumaPromedios = filasBase.reduce((acc, f) => acc + f.Promedio, 0);
+    const aprobados = filasBase.filter((f) => f.Promedio >= notaMinima).length;
+    const enRiesgo = total - aprobados;
+
+    return {
+      total,
+      promedioGeneral: sumaPromedios / total,
+      aprobados,
+      enRiesgo,
+      porcentajeAprobados: (aprobados / total) * 100,
+      porcentajeRiesgo: (enRiesgo / total) * 100,
+    };
+  }, [filasBase]);
 
   if (!stats) return null;
 
@@ -51,16 +113,16 @@ export function MatterDashboard({ resultado, materiaActiva, busqueda, onBusqueda
           <p className="text-xs text-[#6c757d]">Vista general del rendimiento del curso</p>
         </div>
         <span className="ml-auto px-3 py-1 rounded-full bg-[#e3f0fb] text-[#1177d1] text-[11px] font-semibold border border-[#b8d9f3]">
-          {stats.total} estudiantes
+          {resumenSincronizado.total} estudiantes
         </span>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="Total Evaluados" value={`${stats.total}`} hint="estudiantes" />
-        <StatCard label="Promedio Materia" value={`${fmt(stats.promedioGeneral)} pts`} />
-        <StatCard label={`Aprobados (${stats.aprobados})`} value={`${fmt(stats.porcentajeAprobados)}%`} tone="positive" />
-        <StatCard label={`En Riesgo (${stats.enRiesgo})`} value={`${fmt(stats.porcentajeRiesgo)}%`} tone="negative" />
+        <StatCard label="Total Evaluados" value={`${resumenSincronizado.total}`} hint="estudiantes" />
+        <StatCard label="Promedio Materia" value={`${fmt(resumenSincronizado.promedioGeneral)} pts`} />
+        <StatCard label={`Aprobados (${resumenSincronizado.aprobados})`} value={`${fmt(resumenSincronizado.porcentajeAprobados)}%`} tone="positive" />
+        <StatCard label={`En Riesgo (${resumenSincronizado.enRiesgo})`} value={`${fmt(resumenSincronizado.porcentajeRiesgo)}%`} tone="negative" />
       </div>
 
       {/* Dona + Extremos */}
@@ -72,7 +134,7 @@ export function MatterDashboard({ resultado, materiaActiva, busqueda, onBusqueda
           </h3>
           <DonutChart
             segmentos={segmentosDist}
-            centroValue={`${stats.total}`}
+            centroValue={`${resumenSincronizado.total}`}
             centroLabel="Estudiantes"
             size={200}
           />
@@ -118,7 +180,7 @@ export function MatterDashboard({ resultado, materiaActiva, busqueda, onBusqueda
       <div className="bg-blue-50 border border-blue-200 rounded p-5">
         <h3 className="text-xs font-bold text-[#1177d1] uppercase tracking-wide mb-2">Análisis · {materiaActiva}</h3>
         <p className="text-sm text-[#212529] leading-relaxed">
-          En <strong>{materiaActiva}</strong> se registra un <strong className="text-green-700">{fmt(stats.porcentajeAprobados)}%</strong> de aprobación efectiva, frente a un <strong className="text-red-700">{fmt(stats.porcentajeRiesgo)}%</strong> de alumnos que requieren acompañamiento pedagógico urgente.
+          En <strong>{materiaActiva}</strong> se registra un <strong className="text-green-700">{fmt(resumenSincronizado.porcentajeAprobados)}%</strong> de aprobación efectiva ({resumenSincronizado.aprobados} de {resumenSincronizado.total} estudiantes), frente a un <strong className="text-red-700">{fmt(resumenSincronizado.porcentajeRiesgo)}%</strong> ({resumenSincronizado.enRiesgo} estudiantes) que requieren acompañamiento pedagógico.
         </p>
       </div>
 
