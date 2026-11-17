@@ -1,6 +1,6 @@
 # Perfil Hito — Auditoría Académica
 
-**[Ver demo en vivo](https://hito-perfil-hp8qczf2z-alexrosales-6169.vercel.app/)**
+**[Ver demo en vivo](https://hito-perfil.vercel.app/)**
 
 ## Qué es
 
