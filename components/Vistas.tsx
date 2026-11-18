@@ -73,8 +73,31 @@ export function nombreCorto(materia: string) {
 
 /* ============================ Resumen del curso ============================ */
 
+function SelectorVista({ modo, cambiar }: { modo: 'tortas' | 'barras'; cambiar: (m: 'tortas' | 'barras') => void }) {
+  return (
+    <div className="inline-flex rounded border border-[#ced4da] bg-white p-0.5 text-xs font-semibold" role="group" aria-label="Tipo de gráfico">
+      {(['tortas', 'barras'] as const).map((m) => (
+        <button
+          key={m}
+          type="button"
+          onClick={() => cambiar(m)}
+          aria-pressed={modo === m}
+          className={`rounded px-3 py-1.5 ${modo === m ? 'bg-acento text-white' : 'text-tinta-2 hover:text-acento'}`}
+        >
+          {m === 'tortas' ? 'Tortas' : 'Barras'}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const colorPromedio = (v: number) => (v >= 51 ? '#15803d' : v >= 31 ? '#ea580c' : '#b91c1c');
+
 export function ResumenGlobal({ analisis }: { analisis: AnalisisHito }) {
+  const [modo, setModo] = useState<'tortas' | 'barras'>('tortas');
   const g = analisis.global;
+  const segErrores = (['conceptual', 'procedimental', 'descuido'] as const).map((t) => ({ etiqueta: TIPOS_ERROR[t].etiqueta, valor: g.errores[t], color: ERROR_COLOR[t] }));
+  const segNiveles = (conteos: Record<string, number>) => Object.entries(NIVEL_COLOR).map(([n, color]) => ({ etiqueta: n, valor: conteos[n] ?? 0, color }));
   const logrado = g.distribucion.Logrado + g.distribucion.Destacado + g.distribucion.Excepcional;
   const preguntasDificiles = analisis.materias
     .flatMap((m) => m.preguntas.map((p) => ({ m, p })))
@@ -84,9 +107,14 @@ export function ResumenGlobal({ analisis }: { analisis: AnalisisHito }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-tinta-2">
-          Hito {analisis.hito} · {g.n} estudiantes · {analisis.materias.length} asignaturas
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-tinta-2">
+            Hito {analisis.hito} · {g.n} estudiantes · {analisis.materias.length} asignaturas
+          </p>
+          <span className="flex items-center gap-2 text-xs text-tinta-3">
+            Ver gráficos como <SelectorVista modo={modo} cambiar={setModo} />
+          </span>
+        </div>
         <div className="flex flex-wrap gap-2">
           <Boton primario onClick={() => abrirReporte({ tipo: 'global', hito: analisis.hito })}>
             Descargar reporte del curso (PDF)
@@ -108,25 +136,49 @@ export function ResumenGlobal({ analisis }: { analisis: AnalisisHito }) {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Tarjeta titulo="Promedio por asignatura" nota="La línea punteada marca el nivel esperado (51 %).">
-          <ListaBarras
-            items={[...analisis.materias]
-              .sort((a, b) => b.estadisticos.media - a.estadisticos.media)
-              .map((m) => ({
-                etiqueta: m.materia,
-                valor: m.estadisticos.media,
-                color: m.estadisticos.media >= 51 ? '#15803d' : m.estadisticos.media >= 31 ? '#ea580c' : '#b91c1c',
-                nota: `${num(m.pctLogradoOMas, 0)} % del curso alcanza el nivel esperado`,
-              }))}
-          />
+        <Tarjeta titulo="Promedio por asignatura" nota="Verde: llega al nivel esperado (51 %). Naranja: en proceso. Rojo: necesita apoyo.">
+          {modo === 'tortas' ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {[...analisis.materias]
+                .sort((a, b) => b.estadisticos.media - a.estadisticos.media)
+                .map((m) => (
+                  <div key={m.materia} className="flex flex-col items-center gap-1.5 rounded border border-borde bg-[#f8f9fa] p-3">
+                    <Dona
+                      leyenda={false}
+                      tamano={104}
+                      grosor={16}
+                      centroValor={`${num(m.estadisticos.media, 0)}%`}
+                      segmentos={[
+                        { etiqueta: 'Promedio', valor: m.estadisticos.media, color: colorPromedio(m.estadisticos.media) },
+                        { etiqueta: 'Resto', valor: 100 - m.estadisticos.media, color: '#e9ecef' },
+                      ]}
+                    />
+                    <p className="text-center text-xs font-bold leading-tight text-tinta">{nombreCorto(m.materia)}</p>
+                    <p className="text-center text-[10px] text-tinta-3">{num(m.pctLogradoOMas, 0)} % llega al 51 %</p>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <ListaBarras
+              items={[...analisis.materias]
+                .sort((a, b) => b.estadisticos.media - a.estadisticos.media)
+                .map((m) => ({
+                  etiqueta: m.materia,
+                  valor: m.estadisticos.media,
+                  color: colorPromedio(m.estadisticos.media),
+                  nota: `${num(m.pctLogradoOMas, 0)} % del curso alcanza el nivel esperado`,
+                }))}
+            />
+          )}
         </Tarjeta>
         <Tarjeta titulo="¿Cómo está el curso?" nota="Estudiantes según su promedio general.">
-          <DonaNiveles conteos={g.distribucion} tamano={170} />
+          {modo === 'tortas' ? <DonaNiveles conteos={g.distribucion} tamano={170} /> : <BarraApilada segmentos={segNiveles(g.distribucion)} />}
         </Tarjeta>
       </div>
 
       <Tarjeta titulo="Nivel por asignatura" nota="Cuántos estudiantes hay en cada nivel, por asignatura.">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        {modo === 'tortas' ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
           {analisis.materias.map((m) => (
             <div key={m.materia} className="flex flex-col items-center gap-2 rounded border border-borde bg-[#f8f9fa] p-4">
               <p className="text-center text-sm font-bold text-tinta">{m.materia}</p>
@@ -144,6 +196,32 @@ export function ResumenGlobal({ analisis }: { analisis: AnalisisHito }) {
             </div>
           ))}
         </div>
+        ) : (
+          <div className="space-y-4">
+            {analisis.materias.map((m) => (
+              <div key={m.materia}>
+                <div className="mb-1 flex justify-between text-sm">
+                  <span className="font-medium text-tinta">{m.materia}</span>
+                  <span className="text-xs text-tinta-3">promedio {num(m.estadisticos.media, 0)} %</span>
+                </div>
+                <div className="flex h-6 w-full gap-0.5 overflow-hidden rounded">
+                  {Object.entries(NIVEL_COLOR).map(([n, c]) =>
+                    (m.distribucion[n] ?? 0) > 0 ? (
+                      <div
+                        key={n}
+                        title={`${n}: ${m.distribucion[n]}`}
+                        className="flex items-center justify-center text-[11px] font-semibold"
+                        style={{ flex: m.distribucion[n], background: c, color: n === 'Logrado' ? '#212529' : '#fff' }}
+                      >
+                        {m.distribucion[n]}
+                      </div>
+                    ) : null,
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-tinta-2">
           {Object.entries(NIVEL_COLOR).map(([n, c]) => (
             <span key={n} className="inline-flex items-center gap-1.5">
@@ -156,19 +234,40 @@ export function ResumenGlobal({ analisis }: { analisis: AnalisisHito }) {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Tarjeta titulo="Preguntas más difíciles" nota="Porcentaje de estudiantes que no llegaron al 51 % en esa pregunta.">
-          <ListaBarras
-            meta={null}
-            color="#b91c1c"
-            items={preguntasDificiles.map(({ m, p }) => ({
-              etiqueta: `${nombreCorto(m.materia)} ${p.corta + ' '}· ${temaDe(p.etiqueta)}`,
-              valor: p.pctNoLogrado,
-            }))}
-          />
+          {modo === 'tortas' ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {preguntasDificiles.map(({ m, p }) => (
+                <div key={m.materia + p.id} className="flex flex-col items-center gap-1.5 rounded border border-borde bg-[#f8f9fa] p-3">
+                  <Dona
+                    leyenda={false}
+                    tamano={96}
+                    grosor={14}
+                    centroValor={`${num(p.pctNoLogrado, 0)}%`}
+                    segmentos={[
+                      { etiqueta: 'No llegaron al 51 %', valor: p.pctNoLogrado, color: '#b91c1c' },
+                      { etiqueta: 'Llegaron', valor: 100 - p.pctNoLogrado, color: '#e9ecef' },
+                    ]}
+                  />
+                  <p className="text-center text-xs font-bold text-tinta">
+                    {nombreCorto(m.materia)} · {p.corta}
+                  </p>
+                  <p className="text-center text-[10px] leading-tight text-tinta-2">{temaDe(p.etiqueta)}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <ListaBarras
+              meta={null}
+              color="#b91c1c"
+              items={preguntasDificiles.map(({ m, p }) => ({
+                etiqueta: `${nombreCorto(m.materia)} ${p.corta + ' '}· ${temaDe(p.etiqueta)}`,
+                valor: p.pctNoLogrado,
+              }))}
+            />
+          )}
         </Tarjeta>
         <Tarjeta titulo="¿Por qué se equivocan?" nota="Todas las respuestas que no fueron correctas, según el puntaje.">
-          <BarraApilada
-            segmentos={(['conceptual', 'procedimental', 'descuido'] as const).map((t) => ({ etiqueta: TIPOS_ERROR[t].etiqueta, valor: g.errores[t], color: ERROR_COLOR[t] }))}
-          />
+          {modo === 'tortas' ? <Dona tamano={160} centroValor={String(segErrores.reduce((a, x) => a + x.valor, 0))} centroEtiqueta="respuestas" segmentos={segErrores} /> : <BarraApilada segmentos={segErrores} />}
           <ul className="mt-4 space-y-1.5 text-sm text-tinta-2">
             {(['conceptual', 'procedimental', 'descuido'] as const).map((t) => (
               <li key={t}>
