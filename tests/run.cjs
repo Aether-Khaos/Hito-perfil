@@ -11,3 +11,4 @@ require('./parser-libro.test.cjs');
 require('./diagnostico.test.cjs');
 require('./leer-xlsx.test.cjs');
 require('./google-errores.test.cjs');
+require('./analisis-hitos.test.cjs');

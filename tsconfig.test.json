@@ -1,7 +1,9 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022"],
+    "lib": [
+      "ES2022"
+    ],
     "module": "commonjs",
     "moduleResolution": "node",
     "strict": false,
@@ -19,6 +21,8 @@
     "lib/diagnostico.ts",
     "lib/parser-libro.ts",
     "lib/leer-xlsx.ts",
-    "lib/google-errores.ts"
+    "lib/google-errores.ts",
+    "lib/analisis-hitos.ts",
+    "lib/consolidado.ts"
   ]
 }

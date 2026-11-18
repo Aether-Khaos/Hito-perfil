@@ -8,6 +8,7 @@ import { leerHoja, type FilaCruda, type HojaLeida } from '@/lib/parser-libro';
 import { leerLibroXlsx } from '@/lib/leer-xlsx';
 import { clasificarErrorGoogle, urlExportacion } from '@/lib/google-errores';
 import { UMBRAL_LOGRADO, nivelDeLogro } from '@/lib/escala';
+import { leerConsolidado, unirConsolidados, type FilaConsolidadoLeida } from '@/lib/consolidado';
 
 const PESTANAS_IGNORADAS = [
   'resumen',
@@ -41,17 +42,20 @@ export function extraerIdHoja(url: unknown): string | null {
   return coincidencia ? coincidencia[1] : null;
 }
 
+/**
+ * Cliente JWT explícito a partir de una cuenta de servicio validada.
+ * Reemplaza `keyFile`, que google-auth-library marca como obsoleto.
+ */
 function credencialesGoogle() {
-  const scopes = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
-  if (process.env.GOOGLE_CREDENTIALS_JSON) {
-    return new google.auth.GoogleAuth({
-      credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON),
-      scopes,
-    });
+  const bruto = process.env.GOOGLE_CREDENTIALS_JSON ?? fs.readFileSync(path.join(process.cwd(), 'keys.json'), 'utf8');
+  const cred = JSON.parse(bruto) as { type?: string; client_email?: string; private_key?: string };
+  if (cred.type !== 'service_account' || !cred.client_email || !cred.private_key) {
+    throw new Error('Las credenciales deben ser de una cuenta de servicio (type: service_account).');
   }
-  return new google.auth.GoogleAuth({
-    keyFile: path.join(process.cwd(), 'keys.json'),
-    scopes,
+  return new google.auth.JWT({
+    email: cred.client_email,
+    key: cred.private_key.replace(/\\n/g, '\n'),
+    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
   });
 }
 
@@ -122,6 +126,13 @@ async function hojasDesdeGoogle(url: unknown): Promise<{ hojas: HojaCruda[]; ori
 }
 
 /** Hojas de un archivo .xlsx subido desde el navegador. */
+async function hojasDesdeArchivos(archivos: unknown[]): Promise<HojaCruda[]> {
+  if (archivos.length === 0) throw new Error('No se recibió ningún archivo.');
+  const todas: HojaCruda[] = [];
+  for (const archivo of archivos) todas.push(...(await hojasDesdeArchivo(archivo)));
+  return todas;
+}
+
 async function hojasDesdeArchivo(archivo: unknown): Promise<HojaCruda[]> {
   const candidato = archivo as { arrayBuffer?: () => Promise<ArrayBuffer>; name?: string } | null;
   if (!candidato || typeof candidato.arrayBuffer !== 'function') {
@@ -192,8 +203,17 @@ function construirConsecuencias(promedio: number, peorMateria: string | null): s
 function procesarHojas(hojasCrudas: HojaCruda[]) {
   const hojasLeidas: HojaLeida[] = [];
   const advertencias: string[] = [];
+  const consolidados: FilaConsolidadoLeida[][] = [];
 
   for (const hoja of hojasCrudas) {
+    // Libro «Calificaciones por materia»: una columna por asignatura.
+    if (!buscarMateria(hoja.titulo)) {
+      const consolidado = leerConsolidado(hoja.filas);
+      if (consolidado) {
+        consolidados.push(consolidado);
+        continue;
+      }
+    }
     if (!esPestanaMateria(hoja.titulo)) {
       advertencias.push(`Pestaña omitida: «${hoja.titulo}» (configuración o sin formato de materia).`);
       continue;
@@ -306,9 +326,21 @@ function procesarHojas(hojasCrudas: HojaCruda[]) {
 
   perfilesEstudiantes.sort((a, b) => b.promedioGeneral - a.promedioGeneral);
 
+  const registros = hojasLeidas.flatMap((hoja) =>
+    hoja.registros.map((registro) => ({
+      nombre: registro.nombre,
+      correo: registro.correo,
+      materia: hoja.materia || hoja.clave,
+      puntos: registro.puntos,
+      reactivos: registro.reactivos,
+    })),
+  );
+
   return {
     success: true,
     escala: 100,
+    registros,
+    consolidado: unirConsolidados(consolidados),
     datosMaterias,
     estadisticasMaterias,
     maximosPorMateria,
@@ -340,12 +372,15 @@ export async function POST(request: Request) {
     let origen: string;
     let avisosOrigen: string[] = [];
 
+    let compacto = false;
     if (tipo.includes('multipart/form-data')) {
       const formulario = await request.formData();
-      hojasCrudas = await hojasDesdeArchivo(formulario.get('archivo'));
+      hojasCrudas = await hojasDesdeArchivos(formulario.getAll('archivo'));
+      compacto = formulario.get('compacto') === '1';
       origen = 'archivo';
     } else {
       const cuerpo = await request.json().catch(() => null);
+      compacto = !!(cuerpo as { compacto?: boolean } | null)?.compacto;
       if (!cuerpo || typeof cuerpo !== 'object') {
         return NextResponse.json({ success: false, error: 'Cuerpo de la solicitud no válido.' }, { status: 400 });
       }
@@ -358,7 +393,7 @@ export async function POST(request: Request) {
     const resultado = procesarHojas(hojasCrudas);
     resultado.advertencias = [...avisosOrigen, ...resultado.advertencias];
 
-    if (resultado.hojasProcesadas.length === 0) {
+    if (resultado.hojasProcesadas.length === 0 && resultado.consolidado.length === 0) {
       return NextResponse.json(
         {
           success: false,
@@ -369,6 +404,17 @@ export async function POST(request: Request) {
       );
     }
 
+    if (compacto) {
+      // Entrada compacta: la interfaz recalcula el análisis y lo guarda por hito.
+      return NextResponse.json({
+        success: true,
+        origen,
+        registros: resultado.registros,
+        consolidado: resultado.consolidado,
+        hojasProcesadas: resultado.hojasProcesadas,
+        advertencias: resultado.advertencias,
+      });
+    }
     return NextResponse.json({ ...resultado, origen });
   } catch (error) {
     const mensaje = error instanceof Error ? error.message : 'Error desconocido';
