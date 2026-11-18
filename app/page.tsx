@@ -1,17 +1,17 @@
 'use client';
 import { useMemo, useRef, useState } from 'react';
 import { HITOS, analizarHito, compararHitos, type AnalisisHito, type CargaHito, type HitoId } from '@/lib/analisis-hitos';
-import { borrarCarga, guardarAnonimo, guardarCarga, hitosCargados, leerAnonimo, leerCargas } from '@/lib/almacen-hitos';
+import { borrarCarga, guardarCarga, hitosCargados, leerCargas } from '@/lib/almacen-hitos';
 import { useMontado } from '@/lib/montado';
 import { ResumenGlobal, VistaEstudiantes, VistaMaterias, VistaProgresion } from '@/components/Vistas';
 
 type Pestana = 'global' | 'materias' | 'estudiantes' | 'progresion';
 
 const PESTANAS: Array<{ id: Pestana; etiqueta: string }> = [
-  { id: 'global', etiqueta: 'Resumen global' },
-  { id: 'materias', etiqueta: 'Por asignatura y pregunta' },
-  { id: 'estudiantes', etiqueta: 'Perfil diagnóstico' },
-  { id: 'progresion', etiqueta: 'Progresión por hitos' },
+  { id: 'global', etiqueta: 'Resumen del curso' },
+  { id: 'estudiantes', etiqueta: 'Perfil por estudiante' },
+  { id: 'materias', etiqueta: 'Por asignatura' },
+  { id: 'progresion', etiqueta: 'Avance entre hitos' },
 ];
 
 export default function Inicio() {
@@ -28,7 +28,6 @@ function Cascaron() {
 
 function Aplicacion() {
   const [cargas, setCargas] = useState<Partial<Record<HitoId, CargaHito>>>(() => leerCargas());
-  const [anonimo, setAnonimo] = useState<boolean>(() => leerAnonimo());
   const [hitoSel, setHitoSel] = useState<HitoId>('Inicial');
   const [vista, setVista] = useState<HitoId | null>(() => hitosCargados(leerCargas())[0] ?? null);
   const [pestana, setPestana] = useState<Pestana>('global');
@@ -101,31 +100,23 @@ function Aplicacion() {
     procesar(f, lista.map((a) => a.name));
   };
 
-  const cambiarAnonimo = (v: boolean) => {
-    setAnonimo(v);
-    guardarAnonimo(v);
-  };
-
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b border-borde bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-8">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-acento text-sm font-bold text-white">HP</div>
-            <div>
-              <h1 className="text-base font-semibold leading-tight text-tinta">Hito-Perfil</h1>
-              <p className="text-[11px] text-tinta-2">Perfil diagnóstico por hitos · Sociedad de Investigación · Ing. de Sistemas UAB</p>
+      <header className="sticky top-0 z-30 w-full border-b border-[#ced4da] bg-white">
+        <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3 px-4 py-3 sm:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-acento text-sm font-bold text-white">PH</div>
+            <div className="min-w-0">
+              <h1 className="text-base font-semibold leading-tight text-tinta">Perfil Hito</h1>
+              <p className="truncate text-[11px] text-tinta-3">Diagnóstico por hitos · Sociedad de Investigación · UAB</p>
             </div>
           </div>
-          <label className="flex cursor-pointer items-center gap-2 text-xs text-tinta">
-            <input type="checkbox" checked={anonimo} onChange={(e) => cambiarAnonimo(e.target.checked)} className="h-4 w-4 accent-[#1c5cab]" />
-            Modo anónimo <span className="text-tinta-3">(códigos en lugar de nombres)</span>
-          </label>
+          <div className="hidden text-xs text-tinta-3 md:block">Ingeniería de Sistemas</div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1500px] space-y-6 px-4 py-6 sm:px-8">
-        <section className="rounded-xl border border-borde bg-white p-5">
+      <main className="mx-auto w-full max-w-[1400px] space-y-6 px-4 py-6 sm:px-8">
+        <section className="rounded border border-borde bg-white p-4 sm:p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
             <div className="lg:w-48">
               <label className="text-xs font-semibold uppercase text-tinta-2">Hito</label>
@@ -143,7 +134,7 @@ function Aplicacion() {
               </select>
             </div>
             <div className="flex-1">
-              <label className="text-xs font-semibold uppercase text-tinta-2">Libros de Excel (.xlsx)</label>
+              <label className="text-xs font-semibold uppercase text-tinta-2">Archivos de Excel (.xlsx)</label>
               <input
                 ref={entrada}
                 type="file"
@@ -152,13 +143,13 @@ function Aplicacion() {
                 className="mt-1 block w-full text-sm text-tinta-2 file:mr-3 file:rounded-lg file:border-0 file:bg-acento-suave file:px-4 file:py-2 file:text-sm file:font-semibold file:text-acento hover:file:bg-[#d6e5f8]"
               />
               <p className="mt-1 text-[11px] text-tinta-3">
-                «Calificaciones por pregunta» (obligatorio) y «Calificaciones por materia» (opcional). Se procesan en este servidor; nada se envía a servicios externos.
+                Sube «Calificaciones por pregunta» y, si lo tienes, «Calificaciones por materia». Puedes elegir los dos a la vez.
               </p>
             </div>
             <button
               onClick={subirArchivos}
               disabled={cargando}
-              className="rounded-lg bg-acento px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#184f95] disabled:opacity-50"
+              className="rounded bg-acento px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#184f95] disabled:opacity-50"
             >
               {cargando ? 'Analizando…' : `Analizar como Hito ${hitoSel}`}
             </button>
@@ -226,12 +217,12 @@ function Aplicacion() {
 
         {analisis ? (
           <>
-            <nav className="flex flex-wrap gap-1 border-b border-borde">
+            <nav className="-mx-4 flex gap-1 overflow-x-auto border-b border-borde px-4 sm:mx-0 sm:px-0">
               {PESTANAS.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => setPestana(p.id)}
-                  className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
+                  className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-semibold ${
                     pestana === p.id ? 'border-acento text-acento' : 'border-transparent text-tinta-2 hover:text-tinta'
                   }`}
                 >
@@ -239,23 +230,22 @@ function Aplicacion() {
                 </button>
               ))}
             </nav>
-            {pestana === 'global' && <ResumenGlobal analisis={analisis} anonimo={anonimo} />}
-            {pestana === 'materias' && <VistaMaterias key={analisis.hito} analisis={analisis} anonimo={anonimo} />}
-            {pestana === 'estudiantes' && <VistaEstudiantes key={analisis.hito} analisis={analisis} anonimo={anonimo} comparacion={comparacion} />}
-            {pestana === 'progresion' && <VistaProgresion analisisPorHito={analisisPorHito} comparacion={comparacion} anonimo={anonimo} />}
+            {pestana === 'global' && <ResumenGlobal analisis={analisis} />}
+            {pestana === 'materias' && <VistaMaterias key={analisis.hito} analisis={analisis} />}
+            {pestana === 'estudiantes' && <VistaEstudiantes key={analisis.hito} analisis={analisis} comparacion={comparacion} />}
+            {pestana === 'progresion' && <VistaProgresion analisisPorHito={analisisPorHito} comparacion={comparacion} />}
           </>
         ) : (
-          <section className="rounded-xl border border-dashed border-borde bg-white p-10 text-center">
+          <section className="rounded border border-dashed border-borde bg-white p-10 text-center">
             <h2 className="text-lg font-semibold text-tinta">Carga el libro del Hito Inicial para empezar</h2>
             <p className="mx-auto mt-2 max-w-xl text-sm text-tinta-2">
-              El sistema normaliza cada pregunta con su puntaje máximo, calcula el perfil diagnóstico de cada estudiante (preguntas no logradas, tipo de error, fortalezas,
-              debilidades y recomendaciones) y, cuando cargues el Intermedio y el Final, la progresión entre hitos.
+              Verás cómo le fue a cada estudiante en cada pregunta, qué domina, qué le cuesta y qué debe estudiar. Cuando cargues el Intermedio y el Final, también verás su avance.
             </p>
           </section>
         )}
       </main>
       <footer className="mx-auto max-w-[1500px] px-4 pb-8 pt-2 text-[11px] text-tinta-3 sm:px-8">
-        Los datos se guardan solo en este navegador. El perfil es un apoyo descriptivo para la revisión docente: no reemplaza la calificación ni predice el desempeño.
+        Los datos se guardan solo en este navegador. El perfil es una guía para estudiantes y docentes: no reemplaza la calificación.
       </footer>
     </div>
   );

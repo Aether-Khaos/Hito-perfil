@@ -122,19 +122,16 @@ export type EstadoPregunta = 'correcta' | 'con_perdidas' | 'no_lograda' | 'sin_n
 
 export const TIPOS_ERROR: Record<TipoError, { etiqueta: string; descripcion: string }> = {
   conceptual: {
-    etiqueta: 'Conceptual',
-    descripcion:
-      'Puntaje inferior al 31 %: no se evidencia comprensión del concepto que la pregunta evalúa (respuesta ausente o planteamiento incorrecto).',
+    etiqueta: 'De concepto',
+    descripcion: 'Obtuvo menos del 31 %: todavía no comprende el tema que evalúa la pregunta.',
   },
   procedimental: {
-    etiqueta: 'Procedimental',
-    descripcion:
-      'Puntaje entre 31 % y 70 %: plantea el camino correcto, pero falla en pasos de ejecución, aplicación o justificación.',
+    etiqueta: 'De procedimiento',
+    descripcion: 'Obtuvo entre 31 % y 70 %: conoce el camino, pero se equivoca en los pasos.',
   },
   descuido: {
-    etiqueta: 'Descuido',
-    descripcion:
-      'Puntaje entre 71 % y 89 %: domina la pregunta y pierde puntos por imprecisiones menores (cálculo, sintaxis, verificación).',
+    etiqueta: 'Por descuido',
+    descripcion: 'Obtuvo entre 71 % y 89 %: domina el tema y perdió puntos por detalles.',
   },
 };
 
@@ -172,7 +169,7 @@ export function codigoAnonimo(clave: string): string {
 
 export interface PreguntaPerfil {
   id: string;
-  /** «P1», «P2», «P3» o «Única». */
+  /** «P1», «P2», «P3» o «Examen». */
   corta: string;
   etiqueta: string;
   max: number;
@@ -288,7 +285,7 @@ export interface AnalisisHito {
 const ceroErrores = (): Record<TipoError, number> => ({ conceptual: 0, procedimental: 0, descuido: 0 });
 
 function etiquetaCorta(id: string): string {
-  return id === 'GLOBAL' ? 'Única' : id;
+  return id === 'GLOBAL' ? 'Examen' : id;
 }
 
 /** Nombre corto de la pregunta: «Pregunta 1 — Herencia y reutilización» → «Herencia y reutilización». */
@@ -465,14 +462,9 @@ export function analizarHito(carga: CargaHito): AnalisisHito {
       for (const p of preguntas) {
         if (p.pct === null) continue;
         if (p.pct >= 71) {
-          fortalezas.push(
-            `${p.corta} · ${temaDe(p.etiqueta)} (${fmt(p.pct)} %): demuestra ${listaHumana(p.competencias.map(minusculaInicial))}.`,
-          );
+          fortalezas.push(`${temaDe(p.etiqueta)} (${p.corta}, ${fmt(p.pct, 0)} %): domina ${listaHumana(p.competencias.map(minusculaInicial), 3)}.`);
         } else if (p.pct < UMBRAL_LOGRADO) {
-          const tipo = p.tipoError ? TIPOS_ERROR[p.tipoError].etiqueta.toLowerCase() : 'sin clasificar';
-          debilidades.push(
-            `${p.corta} · ${temaDe(p.etiqueta)} (${fmt(p.pct)} %, error ${tipo}): no evidencia ${listaHumana(p.competencias.map(minusculaInicial))}.`,
-          );
+          debilidades.push(`${temaDe(p.etiqueta)} (${p.corta}, ${fmt(p.pct, 0)} %): le falta ${listaHumana(p.competencias.map(minusculaInicial), 3)}.`);
         }
       }
 
@@ -499,7 +491,7 @@ export function analizarHito(carga: CargaHito): AnalisisHito {
       .sort((a, b) => (b.p.pct ?? 0) - (a.p.pct ?? 0))
       .map(
         ({ m, p }) =>
-          `${m.materia} — ${temaDe(p.etiqueta)} (${p.corta}, ${fmt(p.pct)} %): demuestra ${listaHumana(p.competencias.map(minusculaInicial))}.`,
+          `${m.materia} — ${temaDe(p.etiqueta)} (${p.corta}, ${fmt(p.pct, 0)} %): domina ${listaHumana(p.competencias.map(minusculaInicial), 3)}.`,
       );
 
     const noLogradas = materias
@@ -510,7 +502,7 @@ export function analizarHito(carga: CargaHito): AnalisisHito {
       .filter((m) => m.preguntasNoLogradas.length > 0)
       .map((m) => {
         const ps = m.preguntas.filter((p) => p.estado === 'no_lograda');
-        return `${m.materia}: dificultad en ${ps.map((p) => `${temaDe(p.etiqueta)} (${p.corta}, ${fmt(p.pct)} %)`).join('; ')}.`;
+        return `${m.materia}: le cuesta ${ps.map((p) => `${temaDe(p.etiqueta)} (${p.corta}, ${fmt(p.pct, 0)} %)`).join('; ')}.`;
       });
 
     const recomendaciones: Recomendacion[] = [];
@@ -531,7 +523,7 @@ export function analizarHito(carga: CargaHito): AnalisisHito {
     }
     for (const m of materias) {
       for (const p of m.preguntas.filter((pp) => pp.tipoError === 'descuido')) {
-        const accion = `Revisar «${temaDe(p.etiqueta)}» con una lista de verificación final: el dominio está presente y los puntos se pierden por imprecisiones.`;
+        const accion = `Repasar «${temaDe(p.etiqueta)}» y revisar el trabajo antes de entregar: ya domina el tema y pierde puntos por detalles.`;
         if (vistas.has(accion)) continue;
         vistas.add(accion);
         recomendaciones.push({
@@ -549,11 +541,11 @@ export function analizarHito(carga: CargaHito): AnalisisHito {
 
     const enInicio = materias.filter((m) => m.pct < 31).map((m) => m.materia);
     const motivos: string[] = [];
-    if (diag.pctGlobal < 31) motivos.push(`Dominio global de ${fmt(diag.pctGlobal)} % (Inicio).`);
-    else if (diag.pctGlobal < UMBRAL_LOGRADO) motivos.push(`Dominio global de ${fmt(diag.pctGlobal)} %, por debajo del umbral Logrado (51 %).`);
-    if (enInicio.length >= 2) motivos.push(`${enInicio.length} asignaturas en nivel Inicio: ${enInicio.join(', ')}.`);
+    if (diag.pctGlobal < 31) motivos.push(`Su promedio general es ${fmt(diag.pctGlobal, 0)} %, muy por debajo del nivel esperado (51 %).`);
+    else if (diag.pctGlobal < UMBRAL_LOGRADO) motivos.push(`Su promedio general es ${fmt(diag.pctGlobal, 0)} %, por debajo del nivel esperado (51 %).`);
+    if (enInicio.length >= 2) motivos.push(`Tiene ${enInicio.length} asignaturas con menos de 31 %: ${enInicio.join(', ')}.`);
     const incompletas = materias.filter((m) => !m.completo).map((m) => m.materia);
-    if (incompletas.length) motivos.push(`Evaluaciones sin nota en ${incompletas.join(', ')}.`);
+    if (incompletas.length) motivos.push(`Le faltan notas en ${incompletas.join(', ')}.`);
     const riesgoNivel: 'alto' | 'medio' | 'bajo' =
       diag.pctGlobal < 31 || enInicio.length >= 3 ? 'alto' : diag.pctGlobal < UMBRAL_LOGRADO || enInicio.length >= 2 ? 'medio' : 'bajo';
 
@@ -587,12 +579,12 @@ export function analizarHito(carga: CargaHito): AnalisisHito {
     const mejor = [...materias].sort((a, b) => b.pct - a.pct)[0];
     const peor = [...materias].sort((a, b) => a.pct - b.pct)[0];
     const sintesis = [
-      `Dominio global de ${fmt(diag.pctGlobal)} % (${diag.nivelGlobal.etiqueta}), posición ${posicion.get(clave)} de ${diagnosticos.length}.`,
-      mejor ? `Su asignatura más sólida es ${mejor.materia} (${fmt(mejor.pct)} %, cuartil ${mejor.cuartil}).` : '',
-      peor && peor !== mejor ? `La que requiere más atención es ${peor.materia} (${fmt(peor.pct)} %, cuartil ${peor.cuartil}).` : '',
+      `Su promedio general es ${fmt(diag.pctGlobal, 0)} % (${diag.nivelGlobal.etiqueta}) y está en el puesto ${posicion.get(clave)} de ${diagnosticos.length}.`,
+      mejor ? `Le va mejor en ${mejor.materia} (${fmt(mejor.pct, 0)} %).` : '',
+      peor && peor !== mejor ? `Necesita más apoyo en ${peor.materia} (${fmt(peor.pct, 0)} %).` : '',
       noLogradas.length
-        ? `Tiene ${noLogradas.length} pregunta(s) no lograda(s); predominan los errores de tipo ${dominante(erroresPorTipo)}.`
-        : 'No registra preguntas por debajo del nivel Logrado.',
+        ? `Tiene ${noLogradas.length} pregunta(s) por reforzar; la causa más frecuente es ${CAUSA[dominanteTipo(erroresPorTipo)]}.`
+        : 'No tiene preguntas por reforzar.',
     ]
       .filter(Boolean)
       .join(' ');
@@ -672,10 +664,15 @@ export function analizarHito(carga: CargaHito): AnalisisHito {
   };
 }
 
-function dominante(e: Record<TipoError, number>): string {
-  const [tipo] = (Object.entries(e) as Array<[TipoError, number]>).sort((a, b) => b[1] - a[1])[0];
-  return TIPOS_ERROR[tipo].etiqueta.toLowerCase();
+function dominanteTipo(e: Record<TipoError, number>): TipoError {
+  return (Object.entries(e) as Array<[TipoError, number]>).sort((a, b) => b[1] - a[1])[0][0];
 }
+
+const CAUSA: Record<TipoError, string> = {
+  conceptual: 'que todavía no comprende el tema',
+  procedimental: 'equivocarse en los pasos',
+  descuido: 'perder puntos por detalles',
+};
 
 function ordenPrioridad(r: Recomendacion): number {
   return r.prioridad === 'alta' ? 0 : r.prioridad === 'media' ? 1 : 2;
@@ -886,10 +883,17 @@ export function csvEstudiante(a: AnalisisHito, e: PerfilDiagnostico, anonimo: bo
 }
 
 export const ETIQUETA_ESTADO: Record<EstadoPregunta, string> = {
-  correcta: 'Correcta',
-  con_perdidas: 'Lograda con pérdidas',
-  no_lograda: 'No lograda',
+  correcta: 'Bien',
+  con_perdidas: 'Casi bien',
+  no_lograda: 'A reforzar',
   sin_nota: 'Sin nota',
+};
+
+/** Nombres sencillos del riesgo para la interfaz. */
+export const ETIQUETA_RIESGO: Record<'alto' | 'medio' | 'bajo', string> = {
+  alto: 'Necesita apoyo urgente',
+  medio: 'Necesita seguimiento',
+  bajo: 'Va bien',
 };
 
 export { temaDe, fmt as formatoNumero };

@@ -7,7 +7,6 @@
 import { HITOS, type CargaHito, type HitoId } from './analisis-hitos';
 
 const CLAVE = 'hito-perfil:cargas:v1';
-const CLAVE_ANONIMO = 'hito-perfil:anonimo';
 
 let memoria: Partial<Record<HitoId, CargaHito>> = {};
 
@@ -44,20 +43,4 @@ export function borrarCarga(hito: HitoId) {
 
 export function hitosCargados(cargas: Partial<Record<HitoId, CargaHito>>): HitoId[] {
   return HITOS.filter((h) => !!cargas[h]);
-}
-
-export function leerAnonimo(): boolean {
-  try {
-    return localStorage.getItem(CLAVE_ANONIMO) !== '0';
-  } catch {
-    return true;
-  }
-}
-
-export function guardarAnonimo(valor: boolean) {
-  try {
-    localStorage.setItem(CLAVE_ANONIMO, valor ? '1' : '0');
-  } catch {
-    /* sin almacenamiento */
-  }
 }

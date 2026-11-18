@@ -1,18 +1,18 @@
 @import "tailwindcss";
 
-/* Tema claro institucional. Paleta de datos validada para daltonismo (ver lib/paleta.ts). */
+/* Tema claro, con la misma línea visual de la rama main (azul #1177d1, grises Bootstrap). */
 :root {
-  --pagina: #f6f7f9;
+  --pagina: #f8f9fa;
   --superficie: #ffffff;
-  --superficie-2: #f9f9f7;
-  --tinta: #14171c;
-  --tinta-2: #52514e;
-  --tinta-3: #898781;
-  --borde: #e3e4e8;
-  --rejilla: #e1e0d9;
-  --eje: #c3c2b7;
-  --acento: #1c5cab;
-  --acento-suave: #e8f0fb;
+  --superficie-2: #f8f9fa;
+  --tinta: #212529;
+  --tinta-2: #495057;
+  --tinta-3: #6c757d;
+  --borde: #dee2e6;
+  --rejilla: #e9ecef;
+  --eje: #ced4da;
+  --acento: #1177d1;
+  --acento-suave: #e7f1fb;
 }
 
 @theme inline {
