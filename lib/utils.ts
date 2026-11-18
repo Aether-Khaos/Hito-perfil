@@ -696,7 +696,7 @@ function normalizarNivel(raw: string): string | undefined {
   const t = raw.trim().toLowerCase();
   if (t.includes('inicial')) return 'Inicial';
   if (t.includes('intermedio')) return 'Intermedio';
-  if (t.includes('avanzado')) return 'Avanzado';
+  if (t.includes('avanzado') || t.includes('final')) return 'Avanzado';
   return undefined;
 }
 
@@ -727,10 +727,16 @@ function limpiarTextoPregunta(bloque: string): string {
 export function parsearExamenGoogleDoc(textoBruto: string): ExamenParseado {
   const texto = textoBruto.replace(/\u00a0/g, ' ').replace(/\r\n/g, '\n');
 
-  const matchArea = texto.match(/^[ \t]*(?:[ÁA]rea|Materia|Asignatura)\s*:\s*(.+)$/im);
-  const matchGestion = texto.match(/^[ \t]*(?:Gesti[oó]n|A[ñn]o)\s*:\s*(\d{4})/im);
-  const matchHito = texto.match(/^[ \t]*(?:Hito(?:\s+de\s+Evaluaci[oó]n)?|Nivel)\s*:\s*(.+)$/im);
-  const matchSemestre = texto.match(/^[ \t]*Semestre\s*:\s*(.+)$/im);
+  // Los encabezados pegados desde Google Docs suelen venir en una fila de tabla
+  // ("Área: Lógica\tGestión: 2026\tHito de Evaluación: Inicial"), con viñetas o en negrita.
+  // Por eso no se exige inicio de línea y la captura se corta en tabulador, barra o la siguiente etiqueta.
+  const FIN = String.raw`(?=\t|\s{3,}|\||\s+(?:Gesti[oó]n|A[ñn]o|Hito|Nivel|Semestre|Docente|Fecha|[ÁA]rea|Materia|Asignatura)\b[^:\n]{0,25}:|$)`;
+  const etiqueta = (nombres: string) =>
+    new RegExp(String.raw`(?:^|[\s|*•\-])(?:${nombres})\s*\**\s*:\s*\**\s*([^\n\t|]+?)\s*\**\s*${FIN}`, 'im');
+  const matchArea = texto.match(etiqueta(String.raw`[ÁA]rea|Materia|Asignatura`));
+  const matchGestion = texto.match(/(?:Gesti[oó]n|A[ñn]o)\s*\**\s*:\s*\**\s*(?:[IVX]+\s*[\/\-]\s*)?(\d{4})/i);
+  const matchHito = texto.match(etiqueta(String.raw`Hito(?:\s+de\s+Evaluaci[oó]n)?|Nivel`));
+  const matchSemestre = texto.match(etiqueta('Semestre'));
 
   const materia = matchArea?.[1]?.trim();
   const anio = matchGestion ? Number(matchGestion[1]) : undefined;

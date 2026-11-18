@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { google } from 'googleapis';
-import path from 'path';
-import { sql } from '@/lib/db';
+import { sql, hayBaseDeDatos } from '@/lib/db';
+import { crearClienteGoogle, explicarErrorGoogle } from '@/lib/google-auth';
 import type { FilaMateriaInput } from '@/lib/types-db';
 
 const PESTANAS_IGNORADAS = ['resumen', 'config', 'configuracion', 'configuración', 'inicio', 'portada', 'indice', 'índice', 'readme', 'ayuda'];
@@ -15,21 +15,16 @@ function esPestanaMateria(titulo: string): boolean {
 export async function POST(request: Request) {
   try {
     const { url, anio, nivel } = await request.json();
+    if (typeof url !== 'string' || !url.trim()) {
+      return NextResponse.json({ success: false, error: 'Falta la URL del Google Sheet.' }, { status: 400 });
+    }
     const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
     if (!match) {
       return NextResponse.json({ success: false, error: 'URL de Google Sheets no válida' }, { status: 400 });
     }
     const spreadsheetId = match[1];
 
-    const auth = process.env.GOOGLE_CREDENTIALS_JSON
-      ? new google.auth.GoogleAuth({
-          credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON),
-          scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-        })
-      : new google.auth.GoogleAuth({
-          keyFile: path.join(process.cwd(), 'keys.json'),
-          scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-        });
+    const auth = crearClienteGoogle();
 
     const sheets = google.sheets({ version: 'v4', auth });
     const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
@@ -136,7 +131,12 @@ export async function POST(request: Request) {
     }
 
     // GUARDAR EN NEON (BATCH)
-    try {
+    let guardadoEnBase = false;
+    let avisoBase: string | null = null;
+    if (!hayBaseDeDatos()) {
+      avisoBase = 'DATABASE_URL no configurada: los datos se analizaron pero no se guardaron.';
+      console.warn('⚠️ ' + avisoBase);
+    } else try {
       const anioGuardar = anio || '2026';
       const nivelGuardar = nivel || 'Inicial';
 
@@ -224,14 +224,18 @@ export async function POST(request: Request) {
         `;
       }
 
+      guardadoEnBase = true;
       console.log(`✅ Guardado: ${nombresEst.length} estudiantes, ${notasEstudianteId.length} notas (${anioGuardar}/${nivelGuardar})`);
     } catch (dbError) {
       const msg = dbError instanceof Error ? dbError.message : 'Error desconocido';
+      avisoBase = `No se pudo guardar en la base de datos: ${msg}`;
       console.error('❌ Error guardando en Neon:', msg);
     }
 
     return NextResponse.json({
       success: true,
+      guardadoEnBase,
+      avisoBase,
       escala,
       datosMaterias,
       estadisticasMaterias,
@@ -250,7 +254,8 @@ export async function POST(request: Request) {
       }).sort((a, b) => b.promedioGeneral - a.promedioGeneral),
     });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Error desconocido';
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    const { mensaje, status } = explicarErrorGoogle(error);
+    console.error('❌ /api/perfiles:', mensaje);
+    return NextResponse.json({ success: false, error: mensaje }, { status });
   }
 }

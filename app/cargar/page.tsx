@@ -12,6 +12,7 @@ export default function Cargar() {
 
   // Estados para Google Docs (Preguntas / Examen - autodetección)
   const [textoPreguntas, setTextoPreguntas] = useState('');
+  const [materiaExamen, setMateriaExamen] = useState('');
   const [loadingRubrica, setLoadingRubrica] = useState(false);
   const [mensajeRubrica, setMensajeRubrica] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
 
@@ -28,8 +29,10 @@ export default function Cargar() {
       const data = await res.json();
       if (data.success) {
         setMensaje({
-          tipo: 'ok',
-          texto: `Guardado: ${data.perfilesEstudiantes?.length ?? 0} estudiantes en ${anio}/${nivel}.`,
+          tipo: data.avisoBase ? 'error' : 'ok',
+          texto: data.avisoBase
+            ? `Analizados ${data.perfilesEstudiantes?.length ?? 0} estudiantes. ${data.avisoBase}`
+            : `Guardado: ${data.perfilesEstudiantes?.length ?? 0} estudiantes en ${anio}/${nivel}.`,
         });
         setUrl('');
       } else {
@@ -52,6 +55,9 @@ export default function Cargar() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           textoPreguntas: textoPreguntas.trim(),
+          materiaNombreManual: materiaExamen.trim() || undefined,
+          anioManual: anio,
+          nivelManual: nivel,
         }),
       });
       const data = await res.json();
@@ -155,6 +161,18 @@ export default function Cargar() {
             2. Examen
           </h2>
 
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-[#212529] uppercase">Materia (opcional si el documento trae «Área:»)</label>
+          <input
+            type="text"
+            value={materiaExamen}
+            onChange={(e) => setMateriaExamen(e.target.value)}
+            placeholder="Ej.: Estructuras de Datos"
+            className="w-full mt-1 bg-white border border-[#ced4da] text-[#212529] rounded px-3 py-2 text-sm focus:border-[#1177d1] focus:outline-none"
+          />
+          <p className="text-xs text-[#6c757d] mt-1">Se guarda con el año y el nivel seleccionados arriba ({anio} / {nivel}).</p>
         </div>
 
         <div>

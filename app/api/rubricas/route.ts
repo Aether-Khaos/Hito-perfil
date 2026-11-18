@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
-import { neon } from '@neondatabase/serverless';
+import { sql, hayBaseDeDatos } from '@/lib/db';
 import { parsearExamenGoogleDoc, RubricasMateria } from '@/lib/utils';
-
-const sql = neon(process.env.DATABASE_URL!);
 
 function normalizarNombreMateria(s: string): string {
   return s
@@ -13,6 +11,9 @@ function normalizarNombreMateria(s: string): string {
 }
 
 export async function GET(req: Request) {
+  if (!hayBaseDeDatos()) {
+    return NextResponse.json({ success: true, rubricas: {}, aviso: 'DATABASE_URL no configurada.' });
+  }
   try {
     const { searchParams } = new URL(req.url);
     const anio = searchParams.get('anio');
@@ -81,17 +82,25 @@ export async function POST(req: Request) {
       );
     }
 
+    if (!hayBaseDeDatos()) {
+      return NextResponse.json(
+        { success: false, error: 'DATABASE_URL no configurada: no se puede guardar el examen.' },
+        { status: 503 }
+      );
+    }
+
     const parsed = parsearExamenGoogleDoc(textoPreguntas);
 
-    const materiaFinal = (parsed.materia || materiaNombreManual || '').trim();
-    const anioFinal = parsed.anio || (anioManual ? Number(anioManual) : undefined);
-    const nivelFinal = parsed.nivel || nivelManual;
+    // Lo escrito a mano en el formulario tiene prioridad; si falta, se usa lo detectado en el documento.
+    const materiaFinal = String(materiaNombreManual || parsed.materia || '').trim();
+    const anioFinal = anioManual ? Number(anioManual) : parsed.anio;
+    const nivelFinal = (nivelManual ? String(nivelManual) : parsed.nivel) || undefined;
 
     if (!materiaFinal) {
       return NextResponse.json(
         {
           success: false,
-          error: 'No se detectó "Área:" en el documento. Escribe el nombre de la materia manualmente.',
+          error: 'No se detectó "Área:" en el documento. Escribe el nombre de la materia en el campo "Materia".',
         },
         { status: 400 }
       );
@@ -101,7 +110,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: 'No se detectó "Gestión:" o "Hito de Evaluación:" en el documento.',
+          error: 'No se detectó "Gestión:" o "Hito de Evaluación:" en el documento. Selecciona año y hito en el formulario.',
         },
         { status: 400 }
       );
@@ -160,7 +169,7 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error('Error guardando rúbricas:', error);
     return NextResponse.json(
-      { success: false, error: 'Error interno al procesar el documento.' },
+      { success: false, error: `Error interno al procesar el documento: ${error instanceof Error ? error.message : 'desconocido'}` },
       { status: 500 }
     );
   }
