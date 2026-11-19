@@ -8,14 +8,14 @@ interface HeaderProps {
 
 export function Header({ onToggleMenu, menuVisible = false }: HeaderProps) {
   return (
-    <header className="sticky top-0 z-30 w-full bg-white border-b border-[#ced4da]">
-      <div className="flex items-center justify-between px-4 sm:px-8 lg:px-10 py-3">
-        <div className="flex items-center gap-3">
+    <header className="no-imprimir sticky top-0 z-30 w-full bg-white border-b border-[#ced4da]">
+      <div className="flex items-center justify-between gap-3 px-4 sm:px-8 lg:px-10 py-3 min-w-0">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={onToggleMenu}
             aria-label="Abrir o cerrar el menú"
             title="Abrir o cerrar el menú"
-            className="p-2 rounded hover:bg-gray-100 transition-colors"
+            className="p-2 rounded hover:bg-gray-100 transition-colors shrink-0"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#212529]">
               <line x1="3" y1="6" x2="21" y2="6" />
@@ -33,8 +33,9 @@ export function Header({ onToggleMenu, menuVisible = false }: HeaderProps) {
             </div>
           </div>
         </div>
-        <div className="hidden md:block text-xs text-[#6c757d]">
-          Ingeniería de Sistemas
+        <div className="hidden md:block shrink-0 whitespace-nowrap text-right leading-tight">
+          <span className="block text-xs font-semibold text-[#212529]">Ingeniería de Sistemas</span>
+          <span className="block text-[11px] text-[#6c757d]">Universidad Adventista de Bolivia</span>
         </div>
       </div>
     </header>

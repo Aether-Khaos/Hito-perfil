@@ -9,6 +9,7 @@ import { leerLibroXlsx } from '@/lib/leer-xlsx';
 import { clasificarErrorGoogle, urlExportacion } from '@/lib/google-errores';
 import { UMBRAL_LOGRADO, nivelDeLogro } from '@/lib/escala';
 import { leerConsolidado, unirConsolidados, type FilaConsolidadoLeida } from '@/lib/consolidado';
+import { normalizarTexto } from '@/lib/texto';
 
 const PESTANAS_IGNORADAS = [
   'resumen',
@@ -145,6 +146,18 @@ async function hojasDesdeArchivo(archivo: unknown): Promise<HojaCruda[]> {
   return leerLibroXlsx(buffer).map((hoja) => ({ titulo: hoja.titulo, filas: hoja.filas as FilaCruda[] }));
 }
 
+interface PerfilSalida {
+  nombre: string;
+  correo: string;
+  promedioGeneral: number;
+  materias: Record<string, { p1: number | null; p2: number | null; p3: number | null; global: number | null; promedio: number }>;
+  perfilGeneral: { fortalezas: string[]; debilidades: string[]; consecuencias: string };
+  /** Figura en la lista pero no tiene ninguna nota: no se presentó al examen. */
+  noSePresento?: boolean;
+}
+
+const NO_SE_PRESENTO = 'No se presentó al examen del hito: no tiene notas registradas en ninguna asignatura.';
+
 interface FilaRespuesta {
   Nombre: string;
   Correo: string;
@@ -273,7 +286,7 @@ function procesarHojas(hojasCrudas: HojaCruda[]) {
     ),
   );
 
-  const perfilesEstudiantes = diagnosticos.map((diagnostico) => {
+  const perfilesEstudiantes: PerfilSalida[] = diagnosticos.map((diagnostico) => {
     const materias = Object.fromEntries(
       diagnostico.materias.map((materia) => [
         materia.materia,
@@ -324,7 +337,75 @@ function procesarHojas(hojasCrudas: HojaCruda[]) {
     };
   });
 
-  perfilesEstudiantes.sort((a, b) => b.promedioGeneral - a.promedioGeneral);
+  // Nadie queda fuera: quien figura en la lista sin notas aparece como «no se presentó».
+  const consolidado = unirConsolidados(consolidados);
+  const noPresentados: Record<string, Array<{ Nombre: string; Correo: string }>> = {};
+  const soloPorMateria = hojasLeidas.every((h) => h.registros.length === 0) && consolidado.length > 0;
+
+  if (!soloPorMateria) {
+    for (const hoja of hojasLeidas) {
+      if (hoja.sinNota.length === 0) continue;
+      noPresentados[hoja.materia] = hoja.sinNota.map((x) => ({ Nombre: x.nombre, Correo: x.correo }));
+    }
+    const conNota = new Set(perfilesEstudiantes.map((p) => normalizarTexto(p.nombre)));
+    for (const hoja of hojasLeidas) {
+      for (const x of hoja.sinNota) {
+        const clave = normalizarTexto(x.nombre);
+        if (conNota.has(clave)) continue;
+        conNota.add(clave);
+        perfilesEstudiantes.push({
+          nombre: x.nombre,
+          correo: x.correo,
+          promedioGeneral: 0,
+          materias: {},
+          noSePresento: true,
+          perfilGeneral: { fortalezas: [], debilidades: [], consecuencias: NO_SE_PRESENTO },
+        });
+      }
+    }
+  } else {
+    // Solo el libro «por materia»: una nota por asignatura, sin P1, P2 ni P3.
+    const nombresMateria = Array.from(new Set(consolidado.flatMap((f) => Object.keys(f.valores)))).filter(
+      (m) => !normalizarTexto(m).includes('habilidades blandas'),
+    );
+    for (const materia of nombresMateria) {
+      const filas: FilaRespuesta[] = [];
+      for (const f of consolidado) {
+        const v = f.valores[materia];
+        if (v === null || v === undefined) {
+          (noPresentados[materia] ??= []).push({ Nombre: f.nombre, Correo: f.correo });
+          continue;
+        }
+        filas.push({ Nombre: f.nombre, Correo: f.correo, P1: null, P2: null, P3: null, Global: null, Promedio: v, completo: true });
+      }
+      if (filas.length === 0) continue;
+      datosMaterias[materia] = filas;
+      estadisticasMaterias[materia] = estadisticasDeFilas(filas);
+    }
+    for (const f of consolidado) {
+      const notas = nombresMateria.map((m) => [m, f.valores[m]] as const).filter((x): x is readonly [string, number] => x[1] !== null && x[1] !== undefined);
+      if (notas.length === 0) {
+        perfilesEstudiantes.push({ nombre: f.nombre, correo: f.correo, promedioGeneral: 0, materias: {}, noSePresento: true, perfilGeneral: { fortalezas: [], debilidades: [], consecuencias: NO_SE_PRESENTO } });
+        continue;
+      }
+      const promedio = Math.round((notas.reduce((a, x) => a + x[1], 0) / notas.length) * 100) / 100;
+      const orden = [...notas].sort((a, b) => b[1] - a[1]);
+      perfilesEstudiantes.push({
+        nombre: f.nombre,
+        correo: f.correo,
+        promedioGeneral: promedio,
+        materias: Object.fromEntries(notas.map(([m, v]) => [m, { p1: null, p2: null, p3: null, global: null, promedio: v }])),
+        perfilGeneral: {
+          fortalezas: [`Mejor asignatura: ${orden[0][0]} con ${orden[0][1]} %.`],
+          debilidades: orden.length > 1 ? [`Asignatura más débil: ${orden[orden.length - 1][0]} con ${orden[orden.length - 1][1]} %.`] : [],
+          consecuencias: construirConsecuencias(promedio, orden.length > 1 ? orden[orden.length - 1][0] : null),
+        },
+      });
+    }
+    advertencias.push('Solo se cargó el libro «por materia»: hay una nota por asignatura, sin P1, P2 ni P3. Para el detalle por pregunta, sube también «Calificaciones por pregunta».');
+  }
+
+  perfilesEstudiantes.sort((a, b) => Number(!!a.noSePresento) - Number(!!b.noSePresento) || b.promedioGeneral - a.promedioGeneral);
 
   const registros = hojasLeidas.flatMap((hoja) =>
     hoja.registros.map((registro) => ({
@@ -340,7 +421,9 @@ function procesarHojas(hojasCrudas: HojaCruda[]) {
     success: true,
     escala: 100,
     registros,
-    consolidado: unirConsolidados(consolidados),
+    consolidado,
+    soloPorMateria,
+    noPresentados,
     datosMaterias,
     estadisticasMaterias,
     maximosPorMateria,

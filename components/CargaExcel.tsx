@@ -20,7 +20,7 @@ export function CargaExcel() {
   const subir = async () => {
     const archivos = Array.from(entrada.current?.files ?? []);
     if (!archivos.length) {
-      setMensaje({ ok: false, texto: 'Selecciona al menos el archivo «Calificaciones por pregunta».' });
+      setMensaje({ ok: false, texto: 'Selecciona «Calificaciones por pregunta», «Calificaciones por materia» o ambos.' });
       return;
     }
     setCargando(true);
@@ -30,19 +30,23 @@ export function CargaExcel() {
       for (const a of archivos) f.append('archivo', a);
       const res = await fetch('/api/libro', { method: 'POST', body: f });
       const data = await res.json();
-      if (!data.success || !data.registros?.length) {
-        setMensaje({ ok: false, texto: data.error ?? 'El archivo no tiene calificaciones por pregunta.' });
+      const hayPreguntas = (data.registros?.length ?? 0) > 0;
+      if (!data.success || (!hayPreguntas && !data.perfilesEstudiantes?.length)) {
+        setMensaje({ ok: false, texto: data.error ?? 'No se encontraron calificaciones en el archivo.' });
         return;
       }
-      const carga: CargaHito = {
-        hito,
-        archivos: archivos.map((a) => a.name),
-        cargadoEn: new Date().toISOString(),
-        registros: data.registros,
-        consolidado: data.consolidado ?? [],
-        advertencias: data.advertencias ?? [],
-      };
-      const aviso = guardarCarga(carga);
+      let aviso: string | null = null;
+      if (hayPreguntas) {
+        const carga: CargaHito = {
+          hito,
+          archivos: archivos.map((a) => a.name),
+          cargadoEn: new Date().toISOString(),
+          registros: data.registros,
+          consolidado: data.consolidado ?? [],
+          advertencias: data.advertencias ?? [],
+        };
+        aviso = guardarCarga(carga) ?? null;
+      }
       // Mismo formato que usa Historial → Análisis.
       sessionStorage.setItem(
         'historial_data',
@@ -51,10 +55,18 @@ export function CargaExcel() {
           datosMaterias: data.datosMaterias,
           estadisticasMaterias: data.estadisticasMaterias,
           perfilesEstudiantes: data.perfilesEstudiantes,
+          noPresentados: data.noPresentados ?? {},
+          soloPorMateria: !!data.soloPorMateria,
         }),
       );
       sessionStorage.setItem('historial_filtro', JSON.stringify({ anio, nivel: hito }));
-      setMensaje({ ok: true, texto: `Hito ${hito}: ${data.perfilesEstudiantes.length} estudiantes analizados.${aviso ? ` ${aviso}` : ''} Abriendo Análisis…` });
+      const ausentes = (data.perfilesEstudiantes as Array<{ noSePresento?: boolean }>).filter((p) => p.noSePresento).length;
+      const partes = [
+        `Hito ${hito}: ${data.perfilesEstudiantes.length} estudiantes en la lista`,
+        ausentes ? `${ausentes} no se presentaron al examen` : '',
+        hayPreguntas ? '' : 'el archivo solo trae la nota por materia (sin P1–P3 ni diagnóstico por pregunta)',
+      ].filter(Boolean);
+      setMensaje({ ok: true, texto: `${partes.join(' · ')}.${aviso ? ` ${aviso}` : ''} Abriendo Análisis…` });
       setTimeout(() => router.push('/analisis'), 600);
     } catch {
       setMensaje({ ok: false, texto: 'Error de red al procesar el archivo.' });
@@ -66,10 +78,10 @@ export function CargaExcel() {
   return (
     <div className="bg-white border border-[#ced4da] rounded p-6 space-y-4">
       <div>
-        <h2 className="text-base font-bold text-[#212529]">1. Calificaciones por pregunta (Excel)</h2>
+        <h2 className="text-base font-bold text-[#212529]">1. Calificaciones del hito (Excel)</h2>
         <p className="text-xs text-[#6c757d] mt-1">
-          Sube «Calificaciones por pregunta» y, si lo tienes, «Calificaciones por materia» (puedes elegir los dos a la vez). Activa el diagnóstico por pregunta, los
-          reportes en PDF y el avance entre hitos.
+          Acepta los dos tipos de archivo: «Calificaciones por pregunta» y «Calificaciones por materia» (uno solo o los dos a la vez). Con el de preguntas se activa el diagnóstico por pregunta, los
+          reportes en PDF y el avance entre hitos; con el de materias se ve la nota final de cada asignatura.
         </p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

@@ -25,13 +25,21 @@ export function ResumenGeneral({
   const lista = useMemo(() => {
     const t = busqueda.trim().toLowerCase();
     return [...resultado.perfilesEstudiantes]
-      .sort((a, b) => b.promedioGeneral - a.promedioGeneral)
-      .map((e, i) => ({ e, puesto: i + 1 }))
+      .sort((a, b) => Number(!!a.noSePresento) - Number(!!b.noSePresento) || b.promedioGeneral - a.promedioGeneral)
+      .map((e, i) => ({ e, puesto: e.noSePresento ? null : i + 1 }))
       .filter(({ e }) => !t || e.nombre.toLowerCase().includes(t) || e.correo.toLowerCase().includes(t));
   }, [resultado.perfilesEstudiantes, busqueda]);
 
+  const ausentes = resultado.perfilesEstudiantes.filter((e) => e.noSePresento).length;
+
   return (
     <div className="space-y-6">
+      {ausentes > 0 && (
+        <div className="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-[#212529]">
+          <strong className="text-amber-900">{ausentes} de {resultado.perfilesEstudiantes.length} estudiantes no se presentaron al examen.</strong>{' '}
+          Aparecen al final del listado y no se cuentan en los promedios ni en las tortas.
+        </div>
+      )}
       {analisis ? (
         <ResumenGlobal analisis={analisis} />
       ) : (
@@ -69,17 +77,29 @@ export function ResumenGeneral({
                 const d = buscarPerfil(analisis, e.nombre);
                 return (
                   <tr key={e.nombre} className="border-t border-[#e9ecef] hover:bg-[#f8f9fa]">
-                    <td className="px-4 py-2 text-[#6c757d]">{puesto}</td>
+                    <td className="px-4 py-2 text-[#6c757d]">{puesto ?? '—'}</td>
                     <td className="px-4 py-2">
                       <div className="font-medium text-[#212529]">{e.nombre}</div>
-                      <div className="w-40 pt-1">
-                        <MiniBar value={e.promedioGeneral} max={100} tone={e.promedioGeneral >= 51 ? 'emerald' : 'rose'} />
-                      </div>
+                      {!e.noSePresento && (
+                        <div className="w-40 pt-1">
+                          <MiniBar value={e.promedioGeneral} max={100} tone={e.promedioGeneral >= 51 ? 'emerald' : 'rose'} />
+                        </div>
+                      )}
                     </td>
-                    <td className="px-4 py-2 font-semibold text-[#212529]">{fmt(e.promedioGeneral)}</td>
-                    {analisis && <td className="px-4 py-2">{d ? <InsigniaNivel etiqueta={d.nivel.etiqueta} /> : '—'}</td>}
-                    {analisis && <td className="px-4 py-2">{d ? <InsigniaRiesgo nivel={d.riesgo.nivel} /> : '—'}</td>}
-                    {!analisis && <td className="px-4 py-2 text-xs text-[#6c757d]">{Object.keys(e.materias).length} de {materias.length}</td>}
+                    <td className="px-4 py-2 font-semibold text-[#212529]">{e.noSePresento ? '—' : fmt(e.promedioGeneral)}</td>
+                    {e.noSePresento ? (
+                      <td colSpan={analisis ? 2 : 1} className="px-4 py-2">
+                        <span className="inline-block rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+                          No se presentó al examen
+                        </span>
+                      </td>
+                    ) : (
+                      <>
+                        {analisis && <td className="px-4 py-2">{d ? <InsigniaNivel etiqueta={d.nivel.etiqueta} /> : '—'}</td>}
+                        {analisis && <td className="px-4 py-2">{d ? <InsigniaRiesgo nivel={d.riesgo.nivel} /> : '—'}</td>}
+                        {!analisis && <td className="px-4 py-2 text-xs text-[#6c757d]">{Object.keys(e.materias).length} de {materias.length}</td>}
+                      </>
+                    )}
                     <td className="px-4 py-2 text-right">
                       <button
                         type="button"

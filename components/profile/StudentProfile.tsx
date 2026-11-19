@@ -15,6 +15,7 @@ import { SearchInput, StatCard } from '@/components/ui';
 import { MiniBar } from '@/components/DonutChart';
 import { StudentMatterDetail } from '@/components/profile/StudentMatterDetail';
 import { BloqueDiagnostico } from '@/components/PerfilDiagnostico';
+import { DescargaPerfil } from '@/components/profile/DescargaPerfil';
 import type { AnalisisHito, PerfilDiagnostico } from '@/lib/analisis-hitos';
 
 interface Props {
@@ -57,15 +58,26 @@ export function StudentProfile({
     );
   }, [resultado.perfilesEstudiantes, busqueda]);
 
-  const rankMap = useMemo(() => rangoPosiciones(resultado.perfilesEstudiantes), [resultado.perfilesEstudiantes]);
+  // Las posiciones y promedios del curso solo cuentan a quienes rindieron el examen.
+  const presentes = useMemo(
+    () => resultado.perfilesEstudiantes.filter((e) => !e.noSePresento),
+    [resultado.perfilesEstudiantes]
+  );
+  const rankMap = useMemo(() => rangoPosiciones(presentes), [presentes]);
   const posicion = rankMap.get(estudianteActivo.nombre) ?? 0;
   const percentil = useMemo(
-    () => calcularPercentil(estudianteActivo, resultado.perfilesEstudiantes),
-    [estudianteActivo, resultado.perfilesEstudiantes]
+    () => calcularPercentil(estudianteActivo, presentes),
+    [estudianteActivo, presentes]
   );
-  const promedioGrupal = useMemo(
-    () => promedioClase(resultado.perfilesEstudiantes),
-    [resultado.perfilesEstudiantes]
+  const promedioGrupal = useMemo(() => promedioClase(presentes), [presentes]);
+  const ausente = !!estudianteActivo.noSePresento;
+  const clave = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const materiasSinPresentarse = useMemo(
+    () =>
+      Object.entries(resultado.noPresentados ?? {})
+        .filter(([, lista]) => lista.some((x) => clave(x.Nombre) === clave(estudianteActivo.nombre)))
+        .map(([m]) => m),
+    [resultado.noPresentados, estudianteActivo.nombre]
   );
   const diff = estudianteActivo.promedioGeneral - promedioGrupal;
 
@@ -93,7 +105,7 @@ export function StudentProfile({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       {/* Lista de estudiantes */}
-      <div className="lg:col-span-4 bg-white border border-[#ced4da] rounded">
+      <div className="no-imprimir lg:col-span-4 bg-white border border-[#ced4da] rounded">
         <div className="p-4 border-b border-[#ced4da] bg-[#f8f9fa] space-y-2">
           <h3 className="text-xs font-bold text-[#212529] uppercase tracking-wide flex items-center gap-2">
             <span className="w-1.5 h-4 bg-[#1177d1] rounded" />
@@ -117,16 +129,22 @@ export function StudentProfile({
                 >
                   <div className="flex justify-between items-center gap-2 text-xs">
                     <span className="truncate">
-                      <span className={active ? 'text-white/70' : 'text-[#6c757d]'}>#{rankMap.get(est.nombre)}</span>{' '}
+                      {!est.noSePresento && (
+                        <><span className={active ? 'text-white/70' : 'text-[#6c757d]'}>#{rankMap.get(est.nombre)}</span>{' '}</>
+                      )}
                       <span className="font-semibold">{est.nombre}</span>
                     </span>
-                    <span className="font-bold shrink-0">{fmt(est.promedioGeneral)}</span>
+                    {est.noSePresento ? (
+                      <span className={`shrink-0 text-[10px] font-semibold ${active ? 'text-white' : 'text-[#6c757d]'}`}>No se presentó</span>
+                    ) : (
+                      <span className="font-bold shrink-0">{fmt(est.promedioGeneral)}</span>
+                    )}
                   </div>
-                  <MiniBar
+                  {!est.noSePresento && <MiniBar
                     value={est.promedioGeneral}
                     max={scaleMax}
                     tone={est.promedioGeneral >= umbralAprobado ? 'emerald' : 'rose'}
-                  />
+                  />}
                 </div>
               );
             })
@@ -137,32 +155,62 @@ export function StudentProfile({
       </div>
 
       {/* Perfil del estudiante */}
-      <div className="lg:col-span-8 space-y-6">
+      <div className="lg:col-span-8 min-w-0 space-y-6">
         <div className="bg-white border border-[#ced4da] rounded">
           {/* Header del estudiante */}
           <div className="p-6 border-b border-[#ced4da] bg-[#f8f9fa]">
             <div className="flex flex-col sm:flex-row justify-between items-start gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-[#1177d1] flex items-center justify-center text-white font-bold text-lg">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-12 h-12 shrink-0 rounded-full bg-[#1177d1] flex items-center justify-center text-white font-bold text-lg">
                   {estudianteActivo.nombre.charAt(0)}
                 </div>
-                <div>
+                <div className="min-w-0">
                   <span className="text-[10px] font-bold text-[#6c757d] uppercase">Expediente Académico</span>
-                  <h2 className="text-xl font-bold text-[#212529]">{estudianteActivo.nombre}</h2>
-                  <p className="text-xs text-[#6c757d]">{estudianteActivo.correo}</p>
+                  <h2 className="text-xl font-bold text-[#212529] break-words">{estudianteActivo.nombre}</h2>
+                  <p className="text-xs text-[#6c757d] break-all">{estudianteActivo.correo}</p>
                 </div>
               </div>
-              <div className="text-left sm:text-right">
-                <span className="text-[10px] font-bold text-[#6c757d] uppercase block">Promedio General</span>
-                <span className="text-2xl font-bold text-[#1177d1]">{fmt(estudianteActivo.promedioGeneral)} pts</span>
+              <div className="flex items-start gap-3 self-stretch sm:self-auto justify-between sm:justify-end">
+                <div className="text-left sm:text-right">
+                  <span className="text-[10px] font-bold text-[#6c757d] uppercase block">Promedio General</span>
+                  {ausente ? (
+                    <span className="text-base font-bold text-[#6c757d]">No se presentó</span>
+                  ) : (
+                    <span className="text-2xl font-bold text-[#1177d1]">{fmt(estudianteActivo.promedioGeneral)} pts</span>
+                  )}
+                </div>
+                <DescargaPerfil
+                  resultado={resultado}
+                  estudiante={estudianteActivo}
+                  posicion={ausente ? null : { puesto: posicion, total: presentes.length }}
+                  promedioCurso={promedioGrupal}
+                  materiasSinPresentarse={materiasSinPresentarse}
+                  diagnostico={diagnostico}
+                />
               </div>
             </div>
           </div>
 
+          {ausente ? (
+            <div className="p-6">
+              <div className="rounded border border-amber-300 bg-amber-50 p-5 space-y-1">
+                <h4 className="text-sm font-bold text-amber-900">No se presentó al examen</h4>
+                <p className="text-sm text-[#212529]">
+                  Figura en la lista del curso, pero no tiene ninguna nota registrada en este hito. No se calcula su posición ni su
+                  diagnóstico, y no se cuenta en los promedios del curso.
+                </p>
+              </div>
+            </div>
+          ) : (
           <div className="p-6 space-y-6">
+            {materiasSinPresentarse.length > 0 && (
+              <div className="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-[#212529]">
+                <strong className="text-amber-900">No se presentó al examen en:</strong> {materiasSinPresentarse.join(', ')}.
+              </div>
+            )}
             {/* Métricas */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <StatCard label="Posición" value={`#${posicion} / ${resultado.perfilesEstudiantes.length}`} />
+              <StatCard label="Posición" value={`#${posicion} / ${presentes.length}`} />
               <StatCard label="Percentil" value={`P${Math.round(percentil)}`} />
               <StatCard label="Vs Curso" value={`${diff >= 0 ? '+' : ''}${fmt(diff)} pts`} tone={diff >= 0 ? 'positive' : 'negative'} />
               <StatCard label="Promedio Curso" value={`${fmt(promedioGrupal)} pts`} />
@@ -253,7 +301,11 @@ export function StudentProfile({
                         <span className="text-[#1177d1] font-bold text-sm">{fmt(data.promedio)} pts</span>
                       </div>
                       <div className="flex justify-between items-center text-[11px] text-[#6c757d]">
-                        <span>P1: {fmt(data.p1)} · P2: {fmt(data.p2)} · P3: {fmt(data.p3)}</span>
+                        <span>
+                          {data.p1 === null && data.p2 === null && data.p3 === null
+                            ? 'Nota final de la materia'
+                            : `P1: ${fmt(data.p1)} · P2: ${fmt(data.p2)} · P3: ${fmt(data.p3)}`}
+                        </span>
                         <span>Posición #{pos} / {filas.length}</span>
                       </div>
                       <div className="flex justify-between items-center text-[11px]">
@@ -268,6 +320,7 @@ export function StudentProfile({
               </div>
             </div>
           </div>
+          )}
         </div>
       </div>
     </div>

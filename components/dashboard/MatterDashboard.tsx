@@ -55,6 +55,13 @@ export function MatterDashboard({ resultado, materiaActiva, busqueda, onBusqueda
     });
   }, [filasCrudas]);
 
+  const ausentes = useMemo(() => {
+    const t = busqueda.trim().toLowerCase();
+    return (resultado.noPresentados?.[materiaActiva] ?? []).filter(
+      (x) => !t || x.Nombre.toLowerCase().includes(t) || x.Correo.toLowerCase().includes(t)
+    );
+  }, [resultado.noPresentados, materiaActiva, busqueda]);
+  const sinPreguntas = filasCrudas.length > 0 && filasCrudas.every((f) => f.P1 === null && f.P2 === null && f.P3 === null);
   const filas = useMemo(() => ordenarPorPromedio(filtrarFilas(filasBase, busqueda)), [filasBase, busqueda]);
   const distribucion = useMemo(() => calcularDistribucion(filasBase), [filasBase]);
   const { mejor, peor } = useMemo(() => obtenerMejorPeor(filasBase), [filasBase]);
@@ -163,7 +170,7 @@ export function MatterDashboard({ resultado, materiaActiva, busqueda, onBusqueda
             </div>
           )}
 
-          <div className="pt-3 border-t border-[#ced4da]">
+          {!sinPreguntas && <div className="pt-3 border-t border-[#ced4da]">
             <span className="text-[10px] font-bold text-[#6c757d] uppercase block mb-2">Promedios por Evaluación</span>
             <div className="grid grid-cols-3 gap-2">
               {[['P1', evals.p1], ['P2', evals.p2], ['P3', evals.p3]].map(([k, v]) => (
@@ -173,7 +180,7 @@ export function MatterDashboard({ resultado, materiaActiva, busqueda, onBusqueda
                 </div>
               ))}
             </div>
-          </div>
+          </div>}
         </div>
       </div>
 
@@ -182,6 +189,9 @@ export function MatterDashboard({ resultado, materiaActiva, busqueda, onBusqueda
         <h3 className="text-xs font-bold text-[#1177d1] uppercase tracking-wide mb-2">Análisis · {materiaActiva}</h3>
         <p className="text-sm text-[#212529] leading-relaxed">
           En <strong>{materiaActiva}</strong> se registra un <strong className="text-green-700">{fmt(resumenSincronizado.porcentajeAprobados)}%</strong> de aprobación efectiva ({resumenSincronizado.aprobados} de {resumenSincronizado.total} estudiantes), frente a un <strong className="text-red-700">{fmt(resumenSincronizado.porcentajeRiesgo)}%</strong> ({resumenSincronizado.enRiesgo} estudiantes) que requieren acompañamiento pedagógico.
+          {(resultado.noPresentados?.[materiaActiva]?.length ?? 0) > 0 && (
+            <> Además, <strong>{resultado.noPresentados![materiaActiva].length}</strong> estudiantes de la lista no se presentaron al examen y no se cuentan en estos porcentajes.</>
+          )}
         </p>
       </div>
 
@@ -194,6 +204,21 @@ export function MatterDashboard({ resultado, materiaActiva, busqueda, onBusqueda
           </div>
         </div>
         <RankingTable filas={filas} onVerPerfil={onVerPerfil} />
+        {ausentes.length > 0 && (
+          <div className="border-t border-[#ced4da]">
+            <div className="bg-amber-50 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-amber-900">
+              No se presentaron al examen · {ausentes.length}
+            </div>
+            <ul className="divide-y divide-[#e9ecef]">
+              {ausentes.map((x) => (
+                <li key={x.Nombre} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+                  <span className="min-w-0 truncate text-[#212529]">{x.Nombre}</span>
+                  <span className="shrink-0 text-xs font-semibold text-[#6c757d]">No se presentó al examen</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );

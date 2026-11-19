@@ -43,7 +43,8 @@ export function leerConsolidado(filas: FilaCruda[]): FilaConsolidadoLeida[] | nu
     const salida: FilaConsolidadoLeida[] = [];
     for (let r = f + 1; r < filas.length; r++) {
       const fila = filas[r] ?? [];
-      const nombre = String(fila[iNombre] ?? '').trim();
+      // Algunas filas traen un prefijo de numeración («3. CHURA ZEGARRA …»).
+      const nombre = String(fila[iNombre] ?? '').trim().replace(/^\d+\s*[.)-]\s*/, '').replace(/\s+/g, ' ');
       if (!nombre || /^(notas?|puntajes?|promedio|total)$/i.test(normalizarTexto(nombre))) continue;
       const valores: Record<string, number | null> = {};
       for (const c of columnas) valores[c.nombre] = aNumero(fila[c.indice]);

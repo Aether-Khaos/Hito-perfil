@@ -172,7 +172,7 @@ export default function Analisis() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 border-b border-[#ced4da]">
+      <div className="no-imprimir flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 border-b border-[#ced4da]">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded bg-[#1177d1] flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

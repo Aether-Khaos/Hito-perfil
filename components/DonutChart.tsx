@@ -12,6 +12,8 @@ interface DonutChartProps {
   thickness?: number;
   centroLabel?: string;
   centroValue?: string;
+  /** Apila la leyenda debajo del gráfico (para tarjetas angostas). */
+  apilado?: boolean;
 }
 
 export function DonutChart({
@@ -20,6 +22,7 @@ export function DonutChart({
   thickness = 28,
   centroLabel,
   centroValue,
+  apilado = false,
 }: DonutChartProps) {
   const total = segmentos.reduce((a, s) => a + s.value, 0);
   const radio = (size - thickness) / 2;
@@ -29,7 +32,7 @@ export function DonutChart({
   let acumulado = 0;
 
   return (
-    <div className="flex flex-col sm:flex-row items-center gap-6">
+    <div className={`flex flex-col items-center min-w-0 w-full ${apilado ? 'gap-3' : 'sm:flex-row gap-6'}`}>
       {/* Gráfico */}
       <div className="relative shrink-0" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="transform -rotate-90">
@@ -79,18 +82,18 @@ export function DonutChart({
       </div>
 
       {/* Leyenda */}
-      <div className="flex-1 w-full space-y-2">
+      <div className={`w-full min-w-0 ${apilado ? 'space-y-1.5' : 'flex-1 space-y-2'}`}>
         {segmentos.map((s, i) => {
           const pct = total > 0 ? (s.value / total) * 100 : 0;
           return (
-            <div key={i} className="flex items-center gap-3 text-sm">
+            <div key={i} className={`flex items-center min-w-0 ${apilado ? 'gap-2 text-xs' : 'gap-3 text-sm'}`}>
               <span
                 className="w-3 h-3 rounded-sm shrink-0"
                 style={{ backgroundColor: s.color }}
               />
-              <span className="flex-1 text-[#212529] truncate">{s.label}</span>
-              <span className="font-bold text-[#212529] tabular-nums">{s.value}</span>
-              <span className="text-xs text-[#6c757d] tabular-nums w-12 text-right">
+              <span className="flex-1 min-w-0 text-[#212529] truncate">{s.label}</span>
+              <span className="font-bold text-[#212529] tabular-nums shrink-0">{Number.isInteger(s.value) ? s.value : s.value.toFixed(1)}</span>
+              <span className="text-xs text-[#6c757d] tabular-nums w-10 shrink-0 text-right">
                 {pct.toFixed(0)}%
               </span>
             </div>

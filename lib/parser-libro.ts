@@ -51,6 +51,8 @@ export interface HojaLeida {
   maxima: Record<string, number>;
   filaMaximos: number | null;
   registros: RegistroLeido[];
+  /** Estudiantes que figuran en la hoja pero no tienen ninguna nota (no se presentaron). */
+  sinNota: Array<{ nombre: string; correo: string }>;
   advertencias: string[];
 }
 
@@ -236,6 +238,7 @@ export function leerHoja(filas: FilaCruda[], opciones: OpcionesLectura = {}): Ho
       maxima: materia ? maximosDe(materia) : {},
       filaMaximos: null,
       registros: [],
+      sinNota: [],
       advertencias: [`La hoja «${nombreMateria}» no tiene filas suficientes para analizar.`],
     };
   }
@@ -249,6 +252,7 @@ export function leerHoja(filas: FilaCruda[], opciones: OpcionesLectura = {}): Ho
       maxima: materia ? maximosDe(materia) : {},
       filaMaximos: null,
       registros: [],
+      sinNota: [],
       advertencias: [
         `La hoja «${nombreMateria}» no tiene encabezados de nombre y de evaluación (P1/P2/P3 o sección). Fue omitida.`,
       ],
@@ -290,6 +294,7 @@ export function leerHoja(filas: FilaCruda[], opciones: OpcionesLectura = {}): Ho
   }
 
   const registros: RegistroLeido[] = [];
+  const sinNota: Array<{ nombre: string; correo: string }> = [];
   const nombresVistos = new Map<string, number>();
 
   for (let i = (filaMaximos ?? 0) + 1; i < filas.length; i++) {
@@ -326,7 +331,10 @@ export function leerHoja(filas: FilaCruda[], opciones: OpcionesLectura = {}): Ho
     }
 
     const ponderado = promedioPonderado(puntos, maximosDisponibles);
-    if (ponderado.evaluacionesConsideradas.length === 0) continue;
+    if (ponderado.evaluacionesConsideradas.length === 0) {
+      sinNota.push({ nombre, correo });
+      continue;
+    }
 
     const claveNombre = normalizarTexto(nombre);
     nombresVistos.set(claveNombre, (nombresVistos.get(claveNombre) ?? 0) + 1);
@@ -360,6 +368,7 @@ export function leerHoja(filas: FilaCruda[], opciones: OpcionesLectura = {}): Ho
     maxima,
     filaMaximos,
     registros,
+    sinNota,
     advertencias: Array.from(new Set(advertencias)),
   };
 }

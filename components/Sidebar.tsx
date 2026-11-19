@@ -25,9 +25,9 @@ export function Sidebar({ isOpen, fijo, onClose, onNavegar }: SidebarProps) {
 
   return (
     <>
-      {isOpen && <div onClick={onClose} className="fixed inset-0 bg-black/30 z-40 lg:hidden" aria-hidden="true" />}
+      {isOpen && <div onClick={onClose} className="no-imprimir fixed inset-0 bg-black/30 z-40 lg:hidden" aria-hidden="true" />}
       <aside
-        className={`fixed top-0 left-0 h-full w-64 bg-white border-r border-[#ced4da] z-50 flex flex-col transform transition-transform duration-300 ease-in-out ${
+        className={`no-imprimir fixed top-0 left-0 h-full w-64 bg-white border-r border-[#ced4da] z-50 flex flex-col transform transition-transform duration-300 ease-in-out ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         } ${fijo ? 'lg:translate-x-0' : 'lg:-translate-x-full'}`}
       >

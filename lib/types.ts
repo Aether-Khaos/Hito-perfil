@@ -24,9 +24,10 @@ export interface PerfilGeneral {
 }
 
 export interface MateriaEstudiante {
-  p1: number;
-  p2: number;
-  p3: number;
+  /** null cuando el archivo solo trae la nota final de la materia. */
+  p1: number | null;
+  p2: number | null;
+  p3: number | null;
   promedio: number;
 }
 
@@ -36,6 +37,8 @@ export interface PerfilEstudiante {
   promedioGeneral: number;
   perfilGeneral: PerfilGeneral;
   materias: Record<string, MateriaEstudiante>;
+  /** Figura en la lista del curso pero no tiene ninguna nota registrada. */
+  noSePresento?: boolean;
 }
 
 export interface ResultadoAuditoria {
@@ -43,6 +46,10 @@ export interface ResultadoAuditoria {
   estadisticasMaterias: Record<string, EstadisticaMateria>;
   datosMaterias: Record<string, FilaMateria[]>;
   perfilesEstudiantes: PerfilEstudiante[];
+  /** Estudiantes de la lista sin nota en cada materia (no se presentaron). */
+  noPresentados?: Record<string, Array<{ Nombre: string; Correo: string }>>;
+  /** El archivo solo trae la nota final por materia (sin P1–P3). */
+  soloPorMateria?: boolean;
   error?: string;
 }
 

@@ -28,11 +28,18 @@ export function StudentMatterDetail({ resultado, estudiante, materia, rubricasMa
     [estudiante, materia, filas, rubricasMateria]
   );
   const distribucion = useMemo(() => calcularDistribucion(filas), [filas]);
+  const datoMateria = estudiante.materias?.[materia];
+  const sinPreguntas = !!datoMateria && datoMateria.p1 === null && datoMateria.p2 === null && datoMateria.p3 === null;
+  const ausente =
+    !!estudiante.noSePresento ||
+    (resultado.noPresentados?.[materia] ?? []).some((x) => x.Nombre.trim().toLowerCase() === estudiante.nombre.trim().toLowerCase());
 
   if (!analisis) {
     return (
       <div className="bg-white border border-[#ced4da] rounded p-8 text-center space-y-4">
-        <p className="text-[#6c757d] text-sm">Sin datos suficientes para esta materia.</p>
+        <p className="text-[#6c757d] text-sm">
+          {ausente ? `${estudiante.nombre} no se presentó al examen de ${materia}.` : 'Sin datos suficientes para esta materia.'}
+        </p>
         <button onClick={onVolver} className="px-4 py-2 rounded bg-[#1177d1] text-white text-xs hover:bg-[#0d62b0] transition-colors">
           ← Volver al perfil general
         </button>
@@ -92,31 +99,43 @@ export function StudentMatterDetail({ resultado, estudiante, materia, rubricasMa
             <StatCard label="Posición en la materia" value={`#${a.posicion} / ${a.total}`} />
             <StatCard label="Percentil" value={`P${Math.round(a.percentil)}`} />
             <StatCard label="Promedio del curso" value={`${fmt(a.promedioCurso)} pts`} />
-            <StatCard label="Tendencia personal" value={a.tendenciaLabel} />
+            <StatCard label="Tendencia personal" value={sinPreguntas ? "Sin P1–P3" : a.tendenciaLabel} />
           </div>
 
           {/* Diagnóstico + proyección */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="bg-blue-50 border border-blue-200 p-5 rounded space-y-2">
               <h4 className="text-xs font-bold text-[#1177d1] uppercase tracking-wide">Diagnóstico en {materia}</h4>
-              <p className="text-sm text-[#212529] leading-relaxed">{a.diagnostico}</p>
+              <p className="text-sm text-[#212529] leading-relaxed">
+                {sinPreguntas
+                  ? `Nota final en ${materia}: ${fmt(a.evaluaciones.promedio)} pts. Promedio del curso: ${fmt(a.promedioCurso)} pts (${a.diffVsCurso >= 0 ? '+' : ''}${fmt(a.diffVsCurso)} pts). Posición ${a.posicion} de ${a.total}.`
+                  : a.diagnostico}
+              </p>
             </div>
+            {!sinPreguntas && (
             <div className="bg-amber-50 border border-amber-200 p-5 rounded space-y-2">
               <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wide">Proyección al Próximo Hito</h4>
               <p className="text-sm text-[#212529] leading-relaxed">{a.proyeccion}</p>
-              <p className={`text-xs font-semibold ${tendenciaColor}`}>
+              {!sinPreguntas && <p className={`text-xs font-semibold ${tendenciaColor}`}>
                 Tendencia: {a.tendencia >= 0 ? '+' : ''}{fmt(a.tendencia)} pts (tú) · {a.tendenciaCurso >= 0 ? '+' : ''}{fmt(a.tendenciaCurso)} pts (curso)
-              </p>
+              </p>}
             </div>
+            )}
           </div>
 
+          {sinPreguntas ? (
+            <div className="rounded border border-[#ced4da] bg-[#f8f9fa] p-4 text-sm text-[#212529]">
+              El archivo cargado solo trae la <strong>nota final de la materia</strong>; no incluye P1, P2 ni P3. Para ver el rendimiento por pregunta, sube también «Calificaciones por pregunta».
+            </div>
+          ) : (
+          <>
           {/* Donas por evaluación (solo muestra el tema evaluado, nunca el examen completo) */}
           <div className="bg-white border border-[#ced4da] rounded p-5 space-y-4">
             <h3 className="text-sm font-bold text-[#212529] uppercase tracking-wide flex items-center gap-2">
               <span className="w-1.5 h-4 bg-[#1177d1] rounded" />
               Rendimiento por Pregunta / Evaluación
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {(['P1', 'P2', 'P3'] as const).map((pName) => {
                 const key = pName.toLowerCase() as 'p1' | 'p2' | 'p3';
                 const tuyo = a.evaluaciones[key];
@@ -130,7 +149,7 @@ export function StudentMatterDetail({ resultado, estudiante, materia, rubricasMa
                   { label: 'Margen', value: Math.max(maxEscala - curso, 0), color: '#e9ecef' },
                 ];
                 return (
-                  <div key={pName} className="bg-[#f8f9fa] border border-[#ced4da] rounded p-4 space-y-3 flex flex-col justify-between">
+                  <div key={pName} className="min-w-0 bg-[#f8f9fa] border border-[#ced4da] rounded p-4 space-y-3 flex flex-col justify-between">
                     <div className="space-y-3">
                       <div className="flex justify-between items-center">
                         <span className="text-sm font-bold text-[#1177d1]">{pName}</span>
@@ -142,7 +161,7 @@ export function StudentMatterDetail({ resultado, estudiante, materia, rubricasMa
                           {diff >= 1 ? 'Le fue bien' : diff <= -1 ? 'A reforzar' : 'Alineado'}
                         </span>
                       </div>
-                      <DonutChart segmentos={segmentosEval} centroValue={fmt(tuyo)} centroLabel="Tú" size={140} thickness={20} />
+                      <DonutChart segmentos={segmentosEval} centroValue={fmt(tuyo)} centroLabel="Tú" size={130} thickness={18} apilado />
                       <div className="text-center text-[11px] text-[#6c757d]">
                         Curso: <strong className="text-[#212529]">{fmt(curso)}</strong> · Diferencia:{' '}
                         <strong className={diff >= 0 ? 'text-green-700' : 'text-red-700'}>
@@ -167,6 +186,11 @@ export function StudentMatterDetail({ resultado, estudiante, materia, rubricasMa
             </div>
           </div>
 
+          </>
+          )}
+
+          {!sinPreguntas && (
+          <>
           {/* Fortalezas y debilidades */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-green-50 border border-green-200 rounded p-5 space-y-2">
@@ -191,6 +215,9 @@ export function StudentMatterDetail({ resultado, estudiante, materia, rubricasMa
             </ul>
           </div>
 
+          </>
+          )}
+
           {/* Distribución general + resumen */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="bg-white border border-[#ced4da] rounded p-5">
@@ -201,6 +228,7 @@ export function StudentMatterDetail({ resultado, estudiante, materia, rubricasMa
               <DonutChart segmentos={segmentosDist} centroValue={`${filas.length}`} centroLabel="Estudiantes" size={180} />
             </div>
 
+            {!sinPreguntas && (
             <div className="bg-white border border-[#ced4da] rounded p-5 space-y-3">
               <h4 className="text-xs font-bold text-[#212529] uppercase tracking-wide flex items-center gap-2">
                 <span className="w-1.5 h-4 bg-[#1177d1] rounded" />
@@ -224,6 +252,7 @@ export function StudentMatterDetail({ resultado, estudiante, materia, rubricasMa
                 })}
               </div>
             </div>
+            )}
           </div>
 
           {/* Otras materias */}
