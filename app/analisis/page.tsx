@@ -11,10 +11,10 @@ import { ResumenGeneral } from '@/components/ResumenGeneral';
 import { useHitos, buscarPerfil } from '@/lib/usar-hitos';
 
 const SECCIONES: Array<{ id: SeccionActiva; label: string }> = [
-  { id: 'general', label: 'Resumen general' },
   { id: 'materia-dashboard', label: 'Dashboard' },
   { id: 'perfil-materia', label: 'Materia' },
   { id: 'estudiante', label: 'Estudiante' },
+  { id: 'general', label: 'Resumen general' },
 ];
 
 function esResultadoAuditoria(x: unknown): x is ResultadoAuditoria {
@@ -38,7 +38,7 @@ function normalizarClave(s: string): string {
 
 export default function Analisis() {
   const [resultado, setResultado] = useState<ResultadoAuditoria | null>(null);
-  const [seccionActiva, setSeccionActiva] = useState<SeccionActiva>('general');
+  const [seccionActiva, setSeccionActiva] = useState<SeccionActiva>('materia-dashboard');
   const [materiaActiva, setMateriaActiva] = useState('');
   const [estudianteActivo, setEstudianteActivo] = useState<PerfilEstudiante | null>(null);
   const [buscoMateria, setBuscoMateria] = useState('');

@@ -13,6 +13,8 @@ export default function Cargar() {
 
   // Estados para Google Docs (Preguntas / Examen - autodetección)
   const [textoPreguntas, setTextoPreguntas] = useState('');
+  const [leyendoArchivo, setLeyendoArchivo] = useState(false);
+  const [archivoExamen, setArchivoExamen] = useState('');
   const [materiaExamen, setMateriaExamen] = useState('');
   const [loadingRubrica, setLoadingRubrica] = useState(false);
   const [mensajeRubrica, setMensajeRubrica] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
@@ -46,6 +48,30 @@ export default function Cargar() {
     }
   };
 
+  // Lee el examen desde un PDF o Word y deja el texto listo para procesar.
+  const leerArchivoExamen = async (archivo: File | undefined) => {
+    if (!archivo) return;
+    setLeyendoArchivo(true);
+    setMensajeRubrica(null);
+    try {
+      const f = new FormData();
+      f.append('archivo', archivo);
+      const res = await fetch('/api/extraer-examen', { method: 'POST', body: f });
+      const data = await res.json();
+      if (data.success) {
+        setTextoPreguntas(data.texto);
+        setArchivoExamen(archivo.name);
+        setMensajeRubrica({ tipo: 'ok', texto: `Se leyó «${archivo.name}». Revisa el texto y pulsa «Procesar y guardar preguntas».` });
+      } else {
+        setMensajeRubrica({ tipo: 'error', texto: data.error ?? 'No se pudo leer el archivo.' });
+      }
+    } catch {
+      setMensajeRubrica({ tipo: 'error', texto: 'Error de red al leer el archivo.' });
+    } finally {
+      setLeyendoArchivo(false);
+    }
+  };
+
   const guardarRubrica = async () => {
     if (!textoPreguntas.trim()) return;
     setLoadingRubrica(true);
@@ -70,6 +96,7 @@ export default function Cargar() {
           texto: `Detectado y guardado: "${data.materia}" (${data.anio} / ${data.nivel}${semInfo}) — Preguntas: ${secciones}.`,
         });
         setTextoPreguntas('');
+        setArchivoExamen('');
       } else {
         setMensajeRubrica({ tipo: 'error', texto: data.error ?? 'Error al procesar el documento.' });
       }
@@ -179,9 +206,22 @@ export default function Cargar() {
           <p className="text-xs text-[#6c757d] mt-1">Se guarda con el año y el nivel seleccionados arriba ({anio} / {nivel}).</p>
         </div>
 
+        <div className="rounded border border-dashed border-[#1177d1] bg-[#f4f8fd] p-4">
+          <label className="text-xs font-semibold text-[#212529] uppercase">Adjuntar el examen (PDF o Word)</label>
+          <input
+            type="file"
+            accept=".pdf,.docx,.txt"
+            onChange={(e) => leerArchivoExamen(e.target.files?.[0])}
+            className="w-full mt-1 text-sm"
+          />
+          <p className="text-xs text-[#6c757d] mt-1">
+            {leyendoArchivo ? 'Leyendo el archivo…' : archivoExamen ? `Archivo cargado: ${archivoExamen}` : 'El texto aparecerá abajo para que lo revises antes de guardar.'}
+          </p>
+        </div>
+
         <div>
           <label className="text-xs font-semibold text-[#212529] uppercase">
-            Inserta el contenido completo del examen 
+            O pega el contenido completo del examen
           </label>
           <textarea
             rows={8}
