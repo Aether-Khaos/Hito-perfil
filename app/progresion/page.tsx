@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { DonutChart } from '@/components/DonutChart';
+import { VistaProgresion } from '@/components/Vistas';
+import { useHitos } from '@/lib/usar-hitos';
 
 interface PorMateria {
   promedio: number;
@@ -27,6 +29,7 @@ interface EstudianteProgresion {
 }
 
 export default function Progresion() {
+  const hitosExcel = useHitos();
   const [anios, setAnios] = useState<string[]>([]);
   const [anio, setAnio] = useState('');
   const [hitosDisponibles, setHitosDisponibles] = useState<string[]>([]);
@@ -240,6 +243,16 @@ export default function Progresion() {
           <p className="text-xs text-[#6c757d]">Distribución general del curso y estado individual por estudiante y materia</p>
         </div>
       </div>
+
+      {/* Avance entre hitos cargados desde Excel */}
+      {Object.keys(hitosExcel.porHito).length > 0 && (
+        <details open className="bg-white border border-[#ced4da] rounded p-4">
+          <summary className="cursor-pointer text-sm font-bold text-[#212529]">Avance entre hitos (libros de Excel cargados)</summary>
+          <div className="mt-4">
+            <VistaProgresion analisisPorHito={hitosExcel.porHito} comparacion={hitosExcel.comparacion} />
+          </div>
+        </details>
+      )}
 
       {/* Filtros: Año, Hito y Materia */}
       <div className="bg-white border border-[#ced4da] rounded p-4 grid grid-cols-1 sm:grid-cols-3 gap-3">

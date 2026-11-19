@@ -14,6 +14,8 @@ import {
 import { SearchInput, StatCard } from '@/components/ui';
 import { MiniBar } from '@/components/DonutChart';
 import { StudentMatterDetail } from '@/components/profile/StudentMatterDetail';
+import { BloqueDiagnostico } from '@/components/PerfilDiagnostico';
+import type { AnalisisHito, PerfilDiagnostico } from '@/lib/analisis-hitos';
 
 interface Props {
   resultado: ResultadoAuditoria;
@@ -22,6 +24,8 @@ interface Props {
   onBusquedaChange: (v: string) => void;
   onSelect: (est: PerfilEstudiante) => void;
   rubricas?: Record<string, RubricasMateria>;
+  /** Diagnóstico por pregunta del hito cargado desde Excel (si existe). */
+  diagnostico?: { analisis: AnalisisHito; perfil: PerfilDiagnostico } | null;
 }
 
 export function StudentProfile({
@@ -31,6 +35,7 @@ export function StudentProfile({
   onBusquedaChange,
   onSelect,
   rubricas = {},
+  diagnostico = null,
 }: Props) {
   const [materiaDetalle, setMateriaDetalle] = useState<string | null>(null);
 
@@ -210,6 +215,9 @@ export function StudentProfile({
                 {perfilEnriquecido.consecuencias || 'Sin observaciones.'}
               </p>
             </div>
+
+            {/* Diagnóstico por pregunta (Excel del hito) */}
+            {diagnostico && <BloqueDiagnostico analisis={diagnostico.analisis} perfil={diagnostico.perfil} />}
 
             {/* Desglose por materia */}
             <div className="space-y-3">

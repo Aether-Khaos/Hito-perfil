@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { sql, hayBaseDeDatos } from '@/lib/db';
 
 export async function GET(request: Request) {
+  if (!hayBaseDeDatos()) {
+    return NextResponse.json({ success: true, estadisticasMaterias: {}, datosMaterias: {}, perfilesEstudiantes: [], aviso: 'DATABASE_URL no configurada.' });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const anio = searchParams.get('anio');

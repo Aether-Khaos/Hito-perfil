@@ -41,3 +41,43 @@ button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
+/* ---- Tokens usados por el diagnóstico por hitos (mismos colores de main) ---- */
+:root {
+  --pagina: #f8f9fa;
+  --tinta: #212529;
+  --tinta-2: #495057;
+  --tinta-3: #6c757d;
+  --borde: #dee2e6;
+  --acento: #1177d1;
+  --acento-suave: #e7f1fb;
+}
+
+@theme inline {
+  --color-pagina: var(--pagina);
+  --color-tinta: var(--tinta);
+  --color-tinta-2: var(--tinta-2);
+  --color-tinta-3: var(--tinta-3);
+  --color-borde: var(--borde);
+  --color-acento: var(--acento);
+  --color-acento-suave: var(--acento-suave);
+}
+
+@media print {
+  html,
+  body {
+    background: #ffffff;
+  }
+  .no-imprimir {
+    display: none !important;
+  }
+  .salto-pagina {
+    break-before: page;
+  }
+  .sin-cortar {
+    break-inside: avoid;
+  }
+  @page {
+    size: A4;
+    margin: 14mm 12mm;
+  }
+}

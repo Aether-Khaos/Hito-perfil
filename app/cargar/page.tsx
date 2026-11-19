@@ -1,4 +1,5 @@
 'use client';
+import { CargaExcel } from '@/components/CargaExcel';
 
 import { useState } from 'react';
 
@@ -84,14 +85,17 @@ export default function Cargar() {
       <div>
         <h1 className="text-2xl font-bold text-[#212529]">Cargar datos</h1>
         <p className="text-sm text-[#6c757d] mt-1">
-          Importa calificaciones desde Google Sheets
+          Importa calificaciones desde Excel o Google Sheets y carga los exámenes
         </p>
       </div>
 
-      {/* Bloque 1: Google Sheet (Notas) */}
+      {/* Bloque 1: Excel del hito (por pregunta) */}
+      <CargaExcel />
+
+      {/* Bloque 2: Google Sheet (Notas) */}
       <div className="bg-white border border-[#ced4da] rounded p-6 space-y-4">
         <div>
-          <h2 className="text-base font-bold text-[#212529]">1. Calificaciones (Google Sheet)</h2>
+          <h2 className="text-base font-bold text-[#212529]">2. Calificaciones (Google Sheet)</h2>
     
         </div>
 
@@ -158,7 +162,7 @@ export default function Cargar() {
       <div className="bg-white border border-[#ced4da] rounded p-6 space-y-4">
         <div>
           <h2 className="text-base font-bold text-[#212529]">
-            2. Examen
+            3. Examen (se ordena y guarda automáticamente)
           </h2>
 
         </div>

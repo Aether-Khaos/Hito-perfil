@@ -14,12 +14,13 @@ interface Props {
   materiaActiva: string;
   busqueda: string;
   onBusquedaChange: (v: string) => void;
+  onVerPerfil?: (nombre: string) => void;
 }
 
 // Colores académicos funcionales para rangos de nota
 const COLORES_RANGO = ['#b91c1c', '#ea580c', '#f59e0b', '#1177d1', '#15803d'];
 
-export function MatterDashboard({ resultado, materiaActiva, busqueda, onBusquedaChange }: Props) {
+export function MatterDashboard({ resultado, materiaActiva, busqueda, onBusquedaChange, onVerPerfil }: Props) {
   const stats = resultado.estadisticasMaterias[materiaActiva];
   const filasCrudas = resultado.datosMaterias[materiaActiva] || [];
 
@@ -192,7 +193,7 @@ export function MatterDashboard({ resultado, materiaActiva, busqueda, onBusqueda
             <SearchInput value={busqueda} onChange={onBusquedaChange} placeholder="Buscar estudiante..." />
           </div>
         </div>
-        <RankingTable filas={filas} />
+        <RankingTable filas={filas} onVerPerfil={onVerPerfil} />
       </div>
     </div>
   );

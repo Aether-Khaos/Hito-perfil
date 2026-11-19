@@ -70,3 +70,16 @@ Las operaciones de escritura se realizan por lote mediante `unnest` para minimiz
 - Base de datos serverless con connection pooling y facturación por uso.
 - Procesamiento por lote para reducir latencia en operaciones masivas.
 - Componentes de visualización sin dependencias externas (SVG nativo), minimizando el bundle size.
+---
+
+## Diagnóstico por hitos (rama `feature/perfil-diagnostico`)
+
+Se suma a lo que ya tiene `main` (carga por Google Sheets, exámenes que se ordenan y guardan solos, historial, análisis y progresión):
+
+- **Cargar datos → 1. Calificaciones por pregunta (Excel):** sube «Calificaciones por pregunta» y «Calificaciones por materia» del hito (Inicial, Intermedio o Final). No requiere base de datos.
+- **Análisis → Resumen general:** tortas del curso (con opción de verlas como barras) y el listado general con el botón **Ver perfil**. El listado de cada materia (Dashboard) también tiene **Ver perfil**.
+- **Análisis → Estudiante:** además del perfil de `main`, muestra el diagnóstico por pregunta: *Lo que domina*, *Lo que le cuesta* y *Cómo debe reforzar* (temas pendientes con lo que le falta y qué estudiar). Botón para descargar el reporte del estudiante en PDF.
+- **Reportes:** reporte del curso e individual en PDF, y datos en Excel (CSV). Hay un PDF del curso sin nombres para presentar.
+- **Progresión:** muestra el avance entre los hitos cargados desde Excel.
+
+Pruebas: `npm test` (47 casos del motor de análisis).

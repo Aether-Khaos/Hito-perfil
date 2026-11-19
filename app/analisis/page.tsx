@@ -7,8 +7,11 @@ import { MatterTabs } from '@/components/MatterTabs';
 import { MatterDashboard } from '@/components/dashboard/MatterDashboard';
 import { MatterProfile } from '@/components/profile/MatterProfile';
 import { StudentProfile } from '@/components/profile/StudentProfile';
+import { ResumenGeneral } from '@/components/ResumenGeneral';
+import { useHitos, buscarPerfil } from '@/lib/usar-hitos';
 
 const SECCIONES: Array<{ id: SeccionActiva; label: string }> = [
+  { id: 'general', label: 'Resumen general' },
   { id: 'materia-dashboard', label: 'Dashboard' },
   { id: 'perfil-materia', label: 'Materia' },
   { id: 'estudiante', label: 'Estudiante' },
@@ -35,7 +38,7 @@ function normalizarClave(s: string): string {
 
 export default function Analisis() {
   const [resultado, setResultado] = useState<ResultadoAuditoria | null>(null);
-  const [seccionActiva, setSeccionActiva] = useState<SeccionActiva>('materia-dashboard');
+  const [seccionActiva, setSeccionActiva] = useState<SeccionActiva>('general');
   const [materiaActiva, setMateriaActiva] = useState('');
   const [estudianteActivo, setEstudianteActivo] = useState<PerfilEstudiante | null>(null);
   const [buscoMateria, setBuscoMateria] = useState('');
@@ -43,6 +46,15 @@ export default function Analisis() {
   const [buscoPerfilMateria, setBuscoPerfilMateria] = useState('');
   const [filtro, setFiltro] = useState<{ anio: string; nivel: string } | null>(null);
   const [rubricas, setRubricas] = useState<Record<string, RubricasMateria>>({});
+  const hitos = useHitos(filtro?.nivel);
+  const verPerfil = (nombre: string) => {
+    const est = resultado?.perfilesEstudiantes.find((e) => e.nombre === nombre);
+    if (est) {
+      setEstudianteActivo(est);
+      setSeccionActiva('estudiante');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
 
   const aplicarResultado = (data: ResultadoAuditoria) => {
     setResultado(data);
@@ -177,12 +189,12 @@ export default function Analisis() {
           </div>
         </div>
 
-        <div className="flex gap-1 bg-[#f8f9fa] border border-[#ced4da] rounded p-1">
+        <div className="flex max-w-full gap-1 overflow-x-auto bg-[#f8f9fa] border border-[#ced4da] rounded p-1">
           {SECCIONES.map((s) => (
             <button
               key={s.id}
               onClick={() => setSeccionActiva(s.id)}
-              className={`px-4 py-1.5 rounded text-xs font-semibold transition-colors ${
+              className={`shrink-0 whitespace-nowrap px-4 py-1.5 rounded text-xs font-semibold transition-colors ${
                 seccionActiva === s.id
                   ? 'bg-[#1177d1] text-white shadow-sm'
                   : 'text-[#6c757d] hover:text-[#212529]'
@@ -206,12 +218,17 @@ export default function Analisis() {
         />
       )}
 
+      {seccionActiva === 'general' && (
+        <ResumenGeneral resultado={resultado} analisis={hitos.actual} onVerPerfil={(est) => verPerfil(est.nombre)} />
+      )}
+
       {seccionActiva === 'materia-dashboard' && claveMateriaResuelta && (
         <MatterDashboard
           resultado={resultado}
           materiaActiva={claveMateriaResuelta}
           busqueda={buscoMateria}
           onBusquedaChange={setBuscoMateria}
+          onVerPerfil={verPerfil}
         />
       )}
       {seccionActiva === 'perfil-materia' && claveMateriaResuelta && (
@@ -231,6 +248,10 @@ export default function Analisis() {
           onBusquedaChange={setBuscoEstudiante}
           onSelect={setEstudianteActivo}
           rubricas={rubricas}
+          diagnostico={(() => {
+            const perfil = buscarPerfil(hitos.actual, estudianteActivo.nombre);
+            return perfil && hitos.actual ? { analisis: hitos.actual, perfil } : null;
+          })()}
         />
       )}
     </div>

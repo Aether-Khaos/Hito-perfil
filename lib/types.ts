@@ -1,4 +1,4 @@
-export type SeccionActiva = 'materia-dashboard' | 'perfil-materia' | 'estudiante';
+export type SeccionActiva = 'general' | 'materia-dashboard' | 'perfil-materia' | 'estudiante';
 export interface FilaMateria {
   Nombre: string;
   Correo: string;

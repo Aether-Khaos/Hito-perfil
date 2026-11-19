@@ -6,9 +6,11 @@ import { fmt } from '@/lib/utils';
 interface Props {
   filas: FilaMateria[];
   showCorreo?: boolean;
+  /** Si se indica, cada fila muestra el botón «Ver perfil». */
+  onVerPerfil?: (nombre: string) => void;
 }
 
-export function RankingTable({ filas, showCorreo = true }: Props) {
+export function RankingTable({ filas, showCorreo = true, onVerPerfil }: Props) {
   return (
     <div className="bg-white border border-neutral-300 rounded-xl overflow-hidden">
       <div className="overflow-x-auto">
@@ -22,6 +24,7 @@ export function RankingTable({ filas, showCorreo = true }: Props) {
               <th className="text-right px-4 py-2 font-medium">P2</th>
               <th className="text-right px-4 py-2 font-medium">P3</th>
               <th className="text-right px-4 py-2 font-medium">Promedio</th>
+              {onVerPerfil && <th className="px-4 py-2" />}
             </tr>
           </thead>
           <tbody>
@@ -34,6 +37,17 @@ export function RankingTable({ filas, showCorreo = true }: Props) {
                 <td className="px-4 py-2 text-right text-black">{fmt(f.P2)}</td>
                 <td className="px-4 py-2 text-right text-black">{fmt(f.P3)}</td>
                 <td className="px-4 py-2 text-right font-semibold text-black">{fmt(f.Promedio)}</td>
+                {onVerPerfil && (
+                  <td className="px-4 py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => onVerPerfil(f.Nombre)}
+                      className="whitespace-nowrap rounded border border-[#1177d1] px-3 py-1 text-xs font-semibold text-[#1177d1] hover:bg-[#1177d1] hover:text-white"
+                    >
+                      Ver perfil
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

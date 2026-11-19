@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { sql, hayBaseDeDatos } from '@/lib/db';
 
 function detectarSlotEvaluacion(raw: string): 'p1' | 'p2' | 'p3' | 'directo' | 'otro' {
   const ev = raw
@@ -24,6 +24,10 @@ function detectarSlotEvaluacion(raw: string): 'p1' | 'p2' | 'p3' | 'directo' | '
 }
 
 export async function GET(request: Request) {
+  if (!hayBaseDeDatos()) {
+    // Sin base de datos: la página usa los hitos cargados desde Excel.
+    return NextResponse.json({ success: true, anios: [], hitosDisponibles: [], estudiantes: [], materias: [], promediosCurso: {}, aviso: 'DATABASE_URL no configurada.' });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const anio = searchParams.get('anio');

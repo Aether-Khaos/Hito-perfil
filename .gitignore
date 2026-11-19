@@ -42,3 +42,7 @@ next-env.d.ts
 keys.json
 .env*
 !.env.example
+
+# artefactos locales de trabajo y de pruebas
+/_work
+/.pruebas
