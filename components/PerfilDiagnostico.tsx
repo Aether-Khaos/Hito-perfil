@@ -43,11 +43,6 @@ const ESTADO_ESTILO: Record<string, string> = {
   sin_nota: 'bg-gray-50 text-gray-500 border-gray-200',
 };
 
-const PRIORIDAD: Record<string, { texto: string; estilo: string }> = {
-  alta: { texto: 'Primero', estilo: 'bg-red-100 text-red-800' },
-  media: { texto: 'Después', estilo: 'bg-amber-100 text-amber-800' },
-  baja: { texto: 'Repaso', estilo: 'bg-green-100 text-green-800' },
-};
 
 function grupoDe(cuartil: number) {
   return cuartil === 4 ? 'Entre el 25 % más alto' : cuartil === 3 ? 'Por encima de la mitad' : cuartil === 2 ? 'Por debajo de la mitad' : 'Entre el 25 % más bajo';
@@ -201,26 +196,7 @@ export function PerfilDiagnosticoVista({
         </div>
       </section>
 
-      <section className="sin-cortar space-y-3 rounded border border-red-200 bg-red-50 p-5">
-        <h4 className="text-xs font-bold uppercase tracking-wide text-red-800">Qué debe estudiar</h4>
-        {perfil.recomendaciones.length ? (
-          <ol className="space-y-2.5 text-sm">
-            {perfil.recomendaciones.slice(0, impresion ? 10 : 7).map((r) => (
-              <li key={r.accion} className="flex gap-3">
-                <span className={`h-fit shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${PRIORIDAD[r.prioridad].estilo}`}>{PRIORIDAD[r.prioridad].texto}</span>
-                <span>
-                  <span className="text-tinta">{r.accion}</span>
-                  <span className="block text-xs text-tinta-2">
-                    {r.materia} · {r.pregunta}
-                  </span>
-                </span>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className="text-sm text-tinta-2">Sin pendientes: mantener el ritmo de estudio.</p>
-        )}
-      </section>
+      <PlanEstudio perfil={perfil} completo={impresion} />
 
       <section className="sin-cortar space-y-3 rounded border border-borde bg-white p-5">
         <TituloBloque>¿Por qué se equivocó?</TituloBloque>
@@ -269,5 +245,134 @@ export function PerfilDiagnosticoVista({
         </section>
       )}
     </article>
+  );
+}
+
+/**
+ * Plan de estudio: deja claro qué está pendiente. Por cada pregunta no lograda
+ * dice cuántos puntos le faltan, qué le falta aprender y cómo estudiarlo; las
+ * preguntas casi logradas quedan como repaso.
+ */
+export function PlanEstudio({ perfil, completo = false }: { perfil: Perfil; completo?: boolean }) {
+  const pendientes = perfil.materias
+    .flatMap((m) => m.preguntas.filter((p) => p.estado === 'no_lograda').map((p) => ({ m, p })))
+    .sort((a, b) => b.p.max * (1 - (b.p.pct ?? 0) / 100) - a.p.max * (1 - (a.p.pct ?? 0) / 100));
+  const repaso = perfil.materias.flatMap((m) => m.preguntas.filter((p) => p.estado === 'con_perdidas').map((p) => ({ m, p })));
+  const visibles = completo ? pendientes : pendientes.slice(0, 6);
+
+  return (
+    <section className="sin-cortar space-y-4 rounded border border-red-200 bg-red-50 p-5">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <h4 className="text-xs font-bold uppercase tracking-wide text-red-800">Cómo debe reforzar · temas pendientes</h4>
+        <p className="text-xs text-red-900">
+          <b>{pendientes.length}</b> pendiente(s) · <b>{repaso.length}</b> para repasar
+        </p>
+      </div>
+
+      {pendientes.length === 0 ? (
+        <p className="text-sm text-[#212529]">No tiene temas pendientes: todas sus preguntas llegan al 51 % o más.</p>
+      ) : (
+        <ol className="space-y-3">
+          {visibles.map(({ m, p }, i) => {
+            const faltan = Math.round(p.max - (p.valor ?? 0));
+            return (
+              <li key={m.materia + p.id} className="rounded border border-red-200 bg-white p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-bold text-[#212529]">
+                    <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-700 text-[11px] text-white">{i + 1}</span>
+                    {m.materia} · {p.corta} · {temaDe(p.etiqueta)}
+                  </p>
+                  <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-800">
+                    Pendiente · le faltan {faltan} de {p.max} pts
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-[#6c757d]">Lo que le falta</p>
+                    <ul className="mt-1 list-inside list-disc space-y-1 text-sm text-[#212529]">
+                      {p.carencias.slice(0, 3).map((c) => (
+                        <li key={c}>{c}</li>
+                      ))}
+                      {p.carencias.length > 3 && <li className="list-none text-xs text-[#6c757d]">y {p.carencias.length - 3} punto(s) más</li>}
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-[#6c757d]">Qué debe estudiar</p>
+                    <ul className="mt-1 list-inside list-disc space-y-1 text-sm text-[#212529]">
+                      {p.acciones.slice(0, 2).map((a) => (
+                        <li key={a}>{a}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+          {!completo && pendientes.length > visibles.length && (
+            <li className="text-xs text-red-900">Y {pendientes.length - visibles.length} tema(s) más en el reporte PDF.</li>
+          )}
+        </ol>
+      )}
+
+      {repaso.length > 0 && (
+        <div className="rounded border border-amber-200 bg-amber-50 p-4">
+          <p className="text-[10px] font-bold uppercase text-amber-800">Para repasar (ya casi lo logra)</p>
+          <ul className="mt-1 list-inside list-disc space-y-1 text-sm text-[#212529]">
+            {repaso.map(({ m, p }) => (
+              <li key={m.materia + p.id}>
+                {m.materia} · {p.corta} · {temaDe(p.etiqueta)} ({num(p.pct, 0)} %)
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Bloque para el perfil del estudiante en Análisis (estilo main). */
+export function BloqueDiagnostico({ analisis, perfil }: { analisis: AnalisisHito; perfil: Perfil }) {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <TituloBloque>Diagnóstico por pregunta · Hito {analisis.hito}</TituloBloque>
+        <button
+          type="button"
+          onClick={() =>
+            window.open(`/reporte?${new URLSearchParams({ tipo: 'estudiante', hito: analisis.hito, clave: perfil.clave }).toString()}`, '_blank', 'noopener')
+          }
+          className="no-imprimir rounded bg-[#1177d1] px-3 py-2 text-xs font-semibold text-white hover:bg-[#0d63b0]"
+        >
+          Descargar reporte del estudiante (PDF)
+        </button>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-2 rounded border border-green-200 bg-green-50 p-5">
+          <h4 className="text-xs font-bold uppercase tracking-wide text-green-800">Lo que domina</h4>
+          {perfil.fortalezas.length ? (
+            <ul className="list-inside list-disc space-y-1.5 text-sm text-[#212529]">
+              {perfil.fortalezas.slice(0, 6).map((f) => (
+                <li key={f}>{f}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-[#6c757d]">Todavía ninguna pregunta llega al 71 %.</p>
+          )}
+        </div>
+        <div className="space-y-2 rounded border border-amber-200 bg-amber-50 p-5">
+          <h4 className="text-xs font-bold uppercase tracking-wide text-amber-800">Lo que le cuesta</h4>
+          {perfil.debilidades.length ? (
+            <ul className="list-inside list-disc space-y-1.5 text-sm text-[#212529]">
+              {perfil.debilidades.map((d) => (
+                <li key={d}>{d}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-[#6c757d]">No tiene preguntas por debajo del 51 %.</p>
+          )}
+        </div>
+      </div>
+      <PlanEstudio perfil={perfil} />
+    </div>
   );
 }

@@ -1,436 +1,261 @@
 import { NextResponse } from 'next/server';
-import fs from 'node:fs';
-import path from 'path';
 import { google } from 'googleapis';
-import { CATALOGO_REACTIVOS, buscarMateria, maximosDe } from '@/lib/catalogo-reactivos';
-import { diagnosticarEstudiante, resumirCurso, type NotasMateria } from '@/lib/diagnostico';
-import { leerHoja, type FilaCruda, type HojaLeida } from '@/lib/parser-libro';
-import { leerLibroXlsx } from '@/lib/leer-xlsx';
-import { clasificarErrorGoogle, urlExportacion } from '@/lib/google-errores';
-import { UMBRAL_LOGRADO, nivelDeLogro } from '@/lib/escala';
-import { leerConsolidado, unirConsolidados, type FilaConsolidadoLeida } from '@/lib/consolidado';
+import { sql, hayBaseDeDatos } from '@/lib/db';
+import { crearClienteGoogle, explicarErrorGoogle } from '@/lib/google-auth';
+import type { FilaMateriaInput } from '@/lib/types-db';
 
-const PESTANAS_IGNORADAS = [
-  'resumen',
-  'config',
-  'configuracion',
-  'inicio',
-  'portada',
-  'indice',
-  'readme',
-  'ayuda',
-  'rubric',
-  'rubrica',
-  'students',
-  'teachers',
-  'radar',
-];
+const PESTANAS_IGNORADAS = ['resumen', 'config', 'configuracion', 'configuración', 'inicio', 'portada', 'indice', 'índice', 'readme', 'ayuda'];
 
 function esPestanaMateria(titulo: string): boolean {
-  const texto = titulo.trim().toLowerCase();
-  if (!texto) return false;
-  if (texto.startsWith('copy')) return false;
-  return !PESTANAS_IGNORADAS.some((ignorada) => texto === ignorada || texto.startsWith(`${ignorada} `));
-}
-
-/** Acepta únicamente enlaces HTTPS de Google Sheets con identificador de documento. */
-export function extraerIdHoja(url: unknown): string | null {
-  if (typeof url !== 'string') return null;
-  const limpia = url.trim();
-  if (!/^https:\/\/docs\.google\.com\/spreadsheets\/d\/[a-zA-Z0-9_-]+/.test(limpia)) return null;
-  const coincidencia = limpia.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-  return coincidencia ? coincidencia[1] : null;
-}
-
-/**
- * Cliente JWT explícito a partir de una cuenta de servicio validada.
- * Reemplaza `keyFile`, que google-auth-library marca como obsoleto.
- */
-function credencialesGoogle() {
-  const bruto = process.env.GOOGLE_CREDENTIALS_JSON ?? fs.readFileSync(path.join(process.cwd(), 'keys.json'), 'utf8');
-  const cred = JSON.parse(bruto) as { type?: string; client_email?: string; private_key?: string };
-  if (cred.type !== 'service_account' || !cred.client_email || !cred.private_key) {
-    throw new Error('Las credenciales deben ser de una cuenta de servicio (type: service_account).');
-  }
-  return new google.auth.JWT({
-    email: cred.client_email,
-    key: cred.private_key.replace(/\\n/g, '\n'),
-    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-  });
-}
-
-interface HojaCruda {
-  titulo: string;
-  filas: FilaCruda[];
-}
-
-/** Hojas del libro publicado en Google Sheets. */
-async function hojasDesdeGoogle(url: unknown): Promise<{ hojas: HojaCruda[]; origen: string; avisos: string[] }> {
-  const spreadsheetId = extraerIdHoja(url);
-  if (!spreadsheetId) {
-    throw new Error('Enlace no válido: se esperaba https://docs.google.com/spreadsheets/d/<id>.');
-  }
-
-  const avisos: string[] = [];
-  const hayCredenciales = !!process.env.GOOGLE_CREDENTIALS_JSON || fs.existsSync(path.join(process.cwd(), 'keys.json'));
-
-  if (hayCredenciales) {
-    try {
-      const auth = credencialesGoogle();
-      const sheets = google.sheets({ version: 'v4', auth });
-      const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
-      const hojas = spreadsheet.data.sheets || [];
-      const resultado: HojaCruda[] = [];
-
-      for (const hoja of hojas) {
-        const titulo = hoja.properties?.title || '';
-        if (!esPestanaMateria(titulo)) continue;
-        const respuesta = await sheets.spreadsheets.values.get({ spreadsheetId, range: titulo });
-        resultado.push({ titulo, filas: (respuesta.data.values || []) as FilaCruda[] });
-      }
-
-      return { hojas: resultado, origen: 'cuenta-de-servicio', avisos };
-    } catch (error) {
-      const diagnostico = clasificarErrorGoogle(error instanceof Error ? error.message : String(error));
-      avisos.push(`${diagnostico.titulo}. ${diagnostico.instruccion}`);
-      // Si la cuenta de servicio no puede leerlo, se intenta la exportación pública.
-    }
-  } else {
-    avisos.push(
-      'No hay credenciales de Google configuradas: se intentó leer el libro por exportación pública.',
-    );
-  }
-
-  const respuesta = await fetch(urlExportacion(spreadsheetId), { redirect: 'follow', cache: 'no-store' });
-  if (!respuesta.ok) {
-    throw new Error(
-      `No se pudo descargar el libro (HTTP ${respuesta.status}). Compártelo como «cualquiera con el enlace» o sube el archivo .xlsx.`,
-    );
-  }
-
-  const tipo = respuesta.headers.get('content-type') || '';
-  const buffer = Buffer.from(await respuesta.arrayBuffer());
-  if (tipo.includes('text/html') || buffer.subarray(0, 2).toString() !== 'PK') {
-    throw new Error(
-      'El libro no es público: Google devolvió la página de inicio de sesión. Compártelo como «cualquiera con el enlace» o sube el archivo .xlsx.',
-    );
-  }
-
-  const hojas = leerLibroXlsx(buffer).map((hoja) => ({
-    titulo: hoja.titulo,
-    filas: hoja.filas as FilaCruda[],
-  }));
-
-  avisos.push('El libro se leyó por exportación pública: conviene compartirlo con la cuenta de servicio para no depender del enlace abierto.');
-  return { hojas, origen: 'exportacion-publica', avisos };
-}
-
-/** Hojas de un archivo .xlsx subido desde el navegador. */
-async function hojasDesdeArchivos(archivos: unknown[]): Promise<HojaCruda[]> {
-  if (archivos.length === 0) throw new Error('No se recibió ningún archivo.');
-  const todas: HojaCruda[] = [];
-  for (const archivo of archivos) todas.push(...(await hojasDesdeArchivo(archivo)));
-  return todas;
-}
-
-async function hojasDesdeArchivo(archivo: unknown): Promise<HojaCruda[]> {
-  const candidato = archivo as { arrayBuffer?: () => Promise<ArrayBuffer>; name?: string } | null;
-  if (!candidato || typeof candidato.arrayBuffer !== 'function') {
-    throw new Error('No se recibió un archivo válido.');
-  }
-  const buffer = Buffer.from(await candidato.arrayBuffer());
-  if (buffer.length === 0) throw new Error('El archivo está vacío.');
-  if (buffer.length > 25 * 1024 * 1024) throw new Error('El archivo supera los 25 MB.');
-
-  return leerLibroXlsx(buffer).map((hoja) => ({ titulo: hoja.titulo, filas: hoja.filas as FilaCruda[] }));
-}
-
-interface FilaRespuesta {
-  Nombre: string;
-  Correo: string;
-  P1: number | null;
-  P2: number | null;
-  P3: number | null;
-  Global: number | null;
-  Promedio: number;
-  completo: boolean;
-}
-
-function porcentaje(valor: number | null, maximo: number | undefined): number | null {
-  if (valor === null || valor === undefined || !maximo) return null;
-  return Number(((valor / maximo) * 100).toFixed(2));
-}
-
-function estadisticasDeFilas(filas: FilaRespuesta[]) {
-  let suma = 0;
-  let aprobados = 0;
-  let regulares = 0;
-  let enRiesgo = 0;
-  for (const fila of filas) {
-    suma += fila.Promedio;
-    if (fila.Promedio >= UMBRAL_LOGRADO) aprobados++;
-    else if (fila.Promedio >= 31) regulares++;
-    else enRiesgo++;
-  }
-  const total = filas.length;
-  return {
-    total,
-    promedioGeneral: total > 0 ? Number((suma / total).toFixed(2)) : 0,
-    aprobados,
-    regulares,
-    enRiesgo,
-    porcentajeAprobados: total > 0 ? Number(((aprobados / total) * 100).toFixed(1)) : 0,
-    porcentajeRegulares: total > 0 ? Number(((regulares / total) * 100).toFixed(1)) : 0,
-    porcentajeRiesgo: total > 0 ? Number(((enRiesgo / total) * 100).toFixed(1)) : 0,
-  };
-}
-
-function construirConsecuencias(promedio: number, peorMateria: string | null): string {
-  const nivel = nivelDeLogro(promedio);
-  if (promedio >= 71) {
-    return `El perfil alcanza ${promedio.toFixed(1).replace('.', ',')} % de dominio global (${nivel.etiqueta}). Conviene sostener la práctica para no descender en el siguiente hito.`;
-  }
-  if (promedio >= UMBRAL_LOGRADO) {
-    return `El perfil alcanza ${promedio.toFixed(1).replace('.', ',')} % de dominio global (${nivel.etiqueta}), el umbral institucional esperado. El margen es estrecho: un descuido en ${peorMateria ?? 'la asignatura más débil'} puede llevar el promedio por debajo de 51 %.`;
-  }
-  if (promedio >= 31) {
-    return `El perfil alcanza ${promedio.toFixed(1).replace('.', ',')} % de dominio global (${nivel.etiqueta}) y todavía no llega al umbral Logrado (51 %). Falta consolidar ${peorMateria ?? 'las competencias más débiles'}.`;
-  }
-  return `El perfil alcanza ${promedio.toFixed(1).replace('.', ',')} % de dominio global (${nivel.etiqueta}). Requiere acompañamiento focalizado en ${peorMateria ?? 'las competencias no evidenciadas'}.`;
-}
-
-/** Procesa las hojas (vengan de Google o de un .xlsx) y arma la respuesta completa. */
-function procesarHojas(hojasCrudas: HojaCruda[]) {
-  const hojasLeidas: HojaLeida[] = [];
-  const advertencias: string[] = [];
-  const consolidados: FilaConsolidadoLeida[][] = [];
-
-  for (const hoja of hojasCrudas) {
-    // Libro «Calificaciones por materia»: una columna por asignatura.
-    if (!buscarMateria(hoja.titulo)) {
-      const consolidado = leerConsolidado(hoja.filas);
-      if (consolidado) {
-        consolidados.push(consolidado);
-        continue;
-      }
-    }
-    if (!esPestanaMateria(hoja.titulo)) {
-      advertencias.push(`Pestaña omitida: «${hoja.titulo}» (configuración o sin formato de materia).`);
-      continue;
-    }
-    const leida = leerHoja(hoja.filas, { materia: hoja.titulo });
-    hojasLeidas.push(leida);
-    for (const aviso of leida.advertencias) advertencias.push(aviso);
-  }
-
-  const datosMaterias: Record<string, FilaRespuesta[]> = {};
-  const maximosPorMateria: Record<string, Record<string, number>> = {};
-  const estadisticasMaterias: Record<string, ReturnType<typeof estadisticasDeFilas>> = {};
-  const catalogadas: Record<string, boolean> = {};
-  const porEstudiante = new Map<
-    string,
-    { correo: string; materias: Array<{ nombre: string; datos: NotasMateria }> }
-  >();
-
-  for (const hoja of hojasLeidas) {
-    if (hoja.registros.length === 0) continue;
-    const maxima = hoja.maxima;
-    const materia = hoja.materia || hoja.clave;
-    maximosPorMateria[materia] = maxima;
-    catalogadas[materia] = hoja.catalogada;
-
-    const filas: FilaRespuesta[] = hoja.registros.map((registro) => ({
-      Nombre: registro.nombre,
-      Correo: registro.correo,
-      P1: porcentaje(registro.puntos.P1 ?? null, maxima.P1),
-      P2: porcentaje(registro.puntos.P2 ?? null, maxima.P2),
-      P3: porcentaje(registro.puntos.P3 ?? null, maxima.P3),
-      Global: porcentaje(registro.puntos.GLOBAL ?? null, maxima.GLOBAL),
-      Promedio: registro.promedio,
-      completo: registro.completo,
-    }));
-
-    datosMaterias[materia] = filas;
-    estadisticasMaterias[materia] = estadisticasDeFilas(filas);
-
-    for (const registro of hoja.registros) {
-      if (!porEstudiante.has(registro.nombre)) {
-        porEstudiante.set(registro.nombre, { correo: registro.correo, materias: [] });
-      }
-      porEstudiante.get(registro.nombre)!.materias.push({
-        nombre: materia,
-        datos: { materia, puntos: registro.puntos, reactivos: registro.reactivos },
-      });
-    }
-  }
-
-  const buscar = (nombre: string) => buscarMateria(nombre);
-  const diagnosticos = Array.from(porEstudiante.entries()).map(([nombre, registro]) =>
-    diagnosticarEstudiante(
-      nombre,
-      registro.materias.map((materia) => materia.datos),
-      buscar,
-    ),
-  );
-
-  const perfilesEstudiantes = diagnosticos.map((diagnostico) => {
-    const materias = Object.fromEntries(
-      diagnostico.materias.map((materia) => [
-        materia.materia,
-        {
-          p1: materia.dimensiones.find((d) => d.id === 'P1')?.pct ?? null,
-          p2: materia.dimensiones.find((d) => d.id === 'P2')?.pct ?? null,
-          p3: materia.dimensiones.find((d) => d.id === 'P3')?.pct ?? null,
-          global: materia.dimensiones.find((d) => d.id === 'GLOBAL')?.pct ?? null,
-          promedio: materia.pctGlobal,
-        },
-      ]),
-    );
-
-    const ordenadas = [...diagnostico.materias].sort((a, b) => b.pctGlobal - a.pctGlobal);
-    const mejor = ordenadas[0];
-    const peor = ordenadas[ordenadas.length - 1];
-
-    const fortalezas: string[] = [];
-    const debilidades: string[] = [];
-
-    if (mejor) {
-      fortalezas.push(
-        `Mejor asignatura: ${mejor.materia} con ${mejor.pctGlobal.toFixed(1).replace('.', ',')} % de dominio (${mejor.nivelGlobal.etiqueta}).`,
-      );
-    }
-    for (const fortaleza of diagnostico.fortalezas.slice(0, 3)) fortalezas.push(fortaleza);
-    for (const brecha of diagnostico.brechas.slice(0, 3)) {
-      debilidades.push(`${brecha.nombre} en ${brecha.materia} (${brecha.puntosEnRiesgo} pts en riesgo).`);
-    }
-    if (peor && ordenadas.length > 1) {
-      debilidades.push(
-        `Asignatura más débil: ${peor.materia} con ${peor.pctGlobal.toFixed(1).replace('.', ',')} %.`,
-      );
-    }
-    if (fortalezas.length === 0) fortalezas.push('Sin fortalezas destacadas con los datos disponibles.');
-    if (debilidades.length === 0) debilidades.push('Sin brechas por debajo del nivel Logrado.');
-
-    return {
-      nombre: diagnostico.nombre,
-      correo: porEstudiante.get(diagnostico.nombre)?.correo ?? '',
-      promedioGeneral: diagnostico.pctGlobal,
-      materias,
-      perfilGeneral: {
-        fortalezas,
-        debilidades,
-        consecuencias: construirConsecuencias(diagnostico.pctGlobal, peor?.materia ?? null),
-      },
-    };
-  });
-
-  perfilesEstudiantes.sort((a, b) => b.promedioGeneral - a.promedioGeneral);
-
-  const registros = hojasLeidas.flatMap((hoja) =>
-    hoja.registros.map((registro) => ({
-      nombre: registro.nombre,
-      correo: registro.correo,
-      materia: hoja.materia || hoja.clave,
-      puntos: registro.puntos,
-      reactivos: registro.reactivos,
-    })),
-  );
-
-  return {
-    success: true,
-    escala: 100,
-    registros,
-    consolidado: unirConsolidados(consolidados),
-    datosMaterias,
-    estadisticasMaterias,
-    maximosPorMateria,
-    catalogadas,
-    perfilesEstudiantes,
-    diagnosticos: diagnosticos.sort((a, b) => a.pctGlobal - b.pctGlobal),
-    resumenCurso: resumirCurso(diagnosticos),
-    catalogo: CATALOGO_REACTIVOS.map((materia) => ({
-      nombre: materia.nombre,
-      hito: materia.hito,
-      instrumento: materia.instrumento,
-      maxima: maximosDe(materia),
-      reactivos: materia.dimensiones.reduce((suma, dimension) => suma + dimension.reactivos.length, 0),
-    })),
-    hojasProcesadas: hojasLeidas.map((hoja) => ({
-      materia: hoja.materia,
-      registros: hoja.registros.length,
-      catalogada: hoja.catalogada,
-      maxima: hoja.maxima,
-    })),
-    advertencias: Array.from(new Set(advertencias)),
-  };
+  const t = titulo.trim().toLowerCase();
+  if (!t) return false;
+  return !PESTANAS_IGNORADAS.some((ignorada) => t === ignorada || t.startsWith(ignorada + ' '));
 }
 
 export async function POST(request: Request) {
   try {
-    const tipo = request.headers.get('content-type') || '';
-    let hojasCrudas: HojaCruda[];
-    let origen: string;
-    let avisosOrigen: string[] = [];
+    const { url, anio, nivel } = await request.json();
+    if (typeof url !== 'string' || !url.trim()) {
+      return NextResponse.json({ success: false, error: 'Falta la URL del Google Sheet.' }, { status: 400 });
+    }
+    const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (!match) {
+      return NextResponse.json({ success: false, error: 'URL de Google Sheets no válida' }, { status: 400 });
+    }
+    const spreadsheetId = match[1];
 
-    let compacto = false;
-    if (tipo.includes('multipart/form-data')) {
-      const formulario = await request.formData();
-      hojasCrudas = await hojasDesdeArchivos(formulario.getAll('archivo'));
-      compacto = formulario.get('compacto') === '1';
-      origen = 'archivo';
-    } else {
-      const cuerpo = await request.json().catch(() => null);
-      compacto = !!(cuerpo as { compacto?: boolean } | null)?.compacto;
-      if (!cuerpo || typeof cuerpo !== 'object') {
-        return NextResponse.json({ success: false, error: 'Cuerpo de la solicitud no válido.' }, { status: 400 });
+    const auth = crearClienteGoogle();
+
+    const sheets = google.sheets({ version: 'v4', auth });
+    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+    const hojas = spreadsheet.data.sheets || [];
+
+    const datosMaterias: Record<string, FilaMateriaInput[]> = {};
+    const estadisticasMaterias: Record<string, Record<string, number>> = {};
+    const estudiantesMap: Record<string, { nombre: string; correo: string; materias: Record<string, { p1: number; p2: number; p3: number; promedio: number }> }> = {};
+    let maxNotaDetectada = 0;
+
+    for (const hoja of hojas) {
+      const tituloHoja = hoja.properties?.title || '';
+      if (!esPestanaMateria(tituloHoja)) continue;
+
+      const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: tituloHoja });
+      const filas = res.data.values || [];
+
+      if (filas.length > 1) {
+        const encabezados = filas[0].map((h: string) => (h ? h.trim().toLowerCase() : ''));
+        const idxNombre = encabezados.findIndex((h: string) => h.includes('nombre') || h === 'estudiante');
+        const idxCorreo = encabezados.findIndex((h: string) => h.includes('correo') || h.includes('email'));
+
+        const registrosValidos: FilaMateriaInput[] = [];
+
+        for (let i = 1; i < filas.length; i++) {
+          const fila = filas[i];
+          if (!fila || fila.length === 0) continue;
+
+          let nombre = idxNombre !== -1 ? fila[idxNombre] : fila[1] || '';
+          const correo = idxCorreo !== -1 ? fila[idxCorreo] : fila[2] || '';
+
+          if (!nombre || typeof nombre !== 'string') continue;
+          nombre = nombre.trim();
+          if (nombre === '') continue;
+          const nombreLower = nombre.toLowerCase();
+          if (nombreLower.includes('puntaje') || nombreLower.includes('promedio') || nombreLower.includes('notas') || nombreLower.includes('total')) continue;
+
+          const notasFila: number[] = [];
+          fila.forEach((val: string, idx: number) => {
+            if (idx > 2 && val !== undefined && val !== '') {
+              const num = parseFloat(val);
+              if (!isNaN(num)) notasFila.push(num);
+            }
+          });
+
+          const p1 = notasFila[0] ?? 0;
+          const p2 = notasFila[1] ?? 0;
+          const p3 = notasFila[2] ?? 0;
+          const promedioMateria = (p1 + p2 + p3) / (notasFila.length > 0 ? Math.min(notasFila.length, 3) : 1);
+
+          if (p1 > maxNotaDetectada) maxNotaDetectada = p1;
+          if (p2 > maxNotaDetectada) maxNotaDetectada = p2;
+          if (p3 > maxNotaDetectada) maxNotaDetectada = p3;
+          if (promedioMateria > maxNotaDetectada) maxNotaDetectada = promedioMateria;
+
+          registrosValidos.push({
+            Nombre: nombre,
+            Correo: correo ? correo.trim() : '',
+            P1: p1,
+            P2: p2,
+            P3: p3,
+            Promedio: promedioMateria,
+          });
+
+          if (!estudiantesMap[nombre]) {
+            estudiantesMap[nombre] = { nombre, correo: correo ? correo.trim() : '', materias: {} };
+          }
+          estudiantesMap[nombre].materias[tituloHoja] = { p1, p2, p3, promedio: promedioMateria };
+        }
+
+        datosMaterias[tituloHoja] = registrosValidos;
       }
-      const lectura = await hojasDesdeGoogle((cuerpo as { url?: string }).url);
-      hojasCrudas = lectura.hojas;
-      origen = lectura.origen;
-      avisosOrigen = lectura.avisos;
     }
 
-    const resultado = procesarHojas(hojasCrudas);
-    resultado.advertencias = [...avisosOrigen, ...resultado.advertencias];
+    const escala = maxNotaDetectada > 20 ? 100 : 20;
+    const umbralAprobado = escala * 0.7;
+    const umbralRegular = escala * 0.5;
 
-    if (resultado.hojasProcesadas.length === 0 && resultado.consolidado.length === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            'No se encontró ninguna pestaña con calificaciones. Revisa que el libro tenga una pestaña por asignatura con encabezados de nombre y de evaluación (P1, P2, P3 o Sección).',
-        },
-        { status: 422 },
-      );
-    }
+    for (const tituloHoja of Object.keys(datosMaterias)) {
+      const registros = datosMaterias[tituloHoja];
+      let sumPromedios = 0;
+      let aprobados = 0;
+      let regulares = 0;
+      let enRiesgo = 0;
 
-    if (compacto) {
-      // Entrada compacta: la interfaz recalcula el análisis y lo guarda por hito.
-      return NextResponse.json({
-        success: true,
-        origen,
-        registros: resultado.registros,
-        consolidado: resultado.consolidado,
-        hojasProcesadas: resultado.hojasProcesadas,
-        advertencias: resultado.advertencias,
+      registros.forEach((reg) => {
+        sumPromedios += reg.Promedio;
+        if (reg.Promedio >= umbralAprobado) aprobados++;
+        else if (reg.Promedio >= umbralRegular) regulares++;
+        else enRiesgo++;
       });
+
+      const total = registros.length;
+      estadisticasMaterias[tituloHoja] = {
+        total,
+        promedioGeneral: total > 0 ? sumPromedios / total : 0,
+        porcentajeAprobados: total > 0 ? (aprobados / total) * 100 : 0,
+        porcentajeRegulares: total > 0 ? (regulares / total) * 100 : 0,
+        porcentajeRiesgo: total > 0 ? (enRiesgo / total) * 100 : 0,
+        aprobados,
+        regulares,
+        enRiesgo,
+      };
     }
-    return NextResponse.json({ ...resultado, origen });
+
+    // GUARDAR EN NEON (BATCH)
+    let guardadoEnBase = false;
+    let avisoBase: string | null = null;
+    if (!hayBaseDeDatos()) {
+      avisoBase = 'DATABASE_URL no configurada: los datos se analizaron pero no se guardaron.';
+      console.warn('⚠️ ' + avisoBase);
+    } else try {
+      const anioGuardar = anio || '2026';
+      const nivelGuardar = nivel || 'Inicial';
+
+      const nombresMaterias = Object.keys(datosMaterias);
+      if (nombresMaterias.length > 0) {
+        await sql`
+          INSERT INTO materias (nombre)
+          SELECT unnest(${nombresMaterias}::text[])
+          ON CONFLICT (nombre) DO NOTHING
+        `;
+      }
+
+      const materiasRows = await sql`SELECT id, nombre FROM materias`;
+      const materiaIdMap: Record<string, number> = {};
+      for (const row of materiasRows) {
+        materiaIdMap[String(row.nombre)] = Number(row.id);
+      }
+
+      const estudiantesUnicos = new Map<string, string>();
+      for (const filas of Object.values(datosMaterias)) {
+        for (const fila of filas) {
+          if (!estudiantesUnicos.has(fila.Nombre)) {
+            estudiantesUnicos.set(fila.Nombre, fila.Correo);
+          }
+        }
+      }
+
+      const nombresEst = Array.from(estudiantesUnicos.keys());
+      const correosEst = Array.from(estudiantesUnicos.values());
+      if (nombresEst.length > 0) {
+        await sql`
+          INSERT INTO estudiantes (nombre, correo)
+          SELECT * FROM unnest(${nombresEst}::text[], ${correosEst}::text[])
+          ON CONFLICT (nombre) DO UPDATE SET correo = EXCLUDED.correo
+        `;
+      }
+
+      const estudiantesRows = await sql`SELECT id, nombre FROM estudiantes`;
+      const estudianteIdMap: Record<string, number> = {};
+      for (const row of estudiantesRows) {
+        estudianteIdMap[String(row.nombre)] = Number(row.id);
+      }
+
+      const notasEstudianteId: number[] = [];
+      const notasMateriaId: number[] = [];
+      const notasEvaluacion: string[] = [];
+      const notasValor: number[] = [];
+      const notasAnio: string[] = [];
+      const notasNivel: string[] = [];
+
+      for (const [materiaNombre, filas] of Object.entries(datosMaterias)) {
+        const materiaId = materiaIdMap[materiaNombre];
+        if (!materiaId) continue;
+        for (const fila of filas) {
+          const estudianteId = estudianteIdMap[fila.Nombre];
+          if (!estudianteId) continue;
+          for (const ev of [
+            { evaluacion: 'P1', valor: fila.P1 },
+            { evaluacion: 'P2', valor: fila.P2 },
+            { evaluacion: 'P3', valor: fila.P3 },
+          ]) {
+            notasEstudianteId.push(estudianteId);
+            notasMateriaId.push(materiaId);
+            notasEvaluacion.push(ev.evaluacion);
+            notasValor.push(ev.valor);
+            notasAnio.push(anioGuardar);
+            notasNivel.push(nivelGuardar);
+          }
+        }
+      }
+
+      if (notasEstudianteId.length > 0) {
+        await sql`
+          INSERT INTO notas (estudiante_id, materia_id, evaluacion, valor, anio, nivel)
+          SELECT * FROM unnest(
+            ${notasEstudianteId}::int[],
+            ${notasMateriaId}::int[],
+            ${notasEvaluacion}::text[],
+            ${notasValor}::numeric[],
+            ${notasAnio}::text[],
+            ${notasNivel}::text[]
+          )
+          ON CONFLICT (estudiante_id, materia_id, evaluacion)
+          DO UPDATE SET valor = EXCLUDED.valor, anio = EXCLUDED.anio, nivel = EXCLUDED.nivel
+        `;
+      }
+
+      guardadoEnBase = true;
+      console.log(`✅ Guardado: ${nombresEst.length} estudiantes, ${notasEstudianteId.length} notas (${anioGuardar}/${nivelGuardar})`);
+    } catch (dbError) {
+      const msg = dbError instanceof Error ? dbError.message : 'Error desconocido';
+      avisoBase = `No se pudo guardar en la base de datos: ${msg}`;
+      console.error('❌ Error guardando en Neon:', msg);
+    }
+
+    return NextResponse.json({
+      success: true,
+      guardadoEnBase,
+      avisoBase,
+      escala,
+      datosMaterias,
+      estadisticasMaterias,
+      perfilesEstudiantes: Object.values(estudiantesMap).map((est) => {
+        const notas = Object.values(est.materias).map((m) => m.promedio);
+        const promedioGeneral = notas.length ? notas.reduce((a, b) => a + b, 0) / notas.length : 0;
+        return {
+          ...est,
+          promedioGeneral,
+          perfilGeneral: {
+            fortalezas: ['Datos cargados correctamente.'],
+            debilidades: ['Sin análisis cualitativo en esta versión.'],
+            consecuencias: `Promedio general: ${promedioGeneral.toFixed(1)} pts.`,
+          },
+        };
+      }).sort((a, b) => b.promedioGeneral - a.promedioGeneral),
+    });
   } catch (error) {
-    const mensaje = error instanceof Error ? error.message : 'Error desconocido';
-    console.error('Error en la ingesta:', mensaje);
-
-    if (/Enlace no válido/.test(mensaje)) {
-      return NextResponse.json({ success: false, error: mensaje }, { status: 400 });
-    }
-
-    // Los mensajes de esta ruta ya explican qué hacer; se devuelven tal cual.
-    return NextResponse.json(
-      {
-        success: false,
-        error: `${mensaje} También puedes subir el archivo .xlsx y analizarlo sin credenciales.`,
-      },
-      { status: 502 },
-    );
+    const { mensaje, status } = explicarErrorGoogle(error);
+    console.error('❌ /api/perfiles:', mensaje);
+    return NextResponse.json({ success: false, error: mensaje }, { status });
   }
 }

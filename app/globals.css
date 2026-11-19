@@ -1,37 +1,65 @@
 @import "tailwindcss";
 
-/* Tema claro, con la misma línea visual de la rama main (azul #1177d1, grises Bootstrap). */
+@source "../app/**/*.{ts,tsx}";
+@source "../components/**/*.{ts,tsx}";
+@source "../lib/**/*.{ts,tsx}";
+
+:root {
+  --background: #ffffff;
+  --foreground: #000000;
+  --border: #d4d4d4;
+  --muted: #525252;
+}
+
+html, body {
+  background: #ffffff;
+  color: #000000;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* Inputs base */
+input, select, textarea {
+  background: #ffffff;
+  border: 1px solid #d4d4d4;
+  color: #000000;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: #a3a3a3;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
+}
+
+input::placeholder {
+  color: #737373;
+  opacity: 1;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* ---- Tokens usados por el diagnóstico por hitos (mismos colores de main) ---- */
 :root {
   --pagina: #f8f9fa;
-  --superficie: #ffffff;
-  --superficie-2: #f8f9fa;
   --tinta: #212529;
   --tinta-2: #495057;
   --tinta-3: #6c757d;
   --borde: #dee2e6;
-  --rejilla: #e9ecef;
-  --eje: #ced4da;
   --acento: #1177d1;
   --acento-suave: #e7f1fb;
 }
 
 @theme inline {
   --color-pagina: var(--pagina);
-  --color-superficie: var(--superficie);
   --color-tinta: var(--tinta);
   --color-tinta-2: var(--tinta-2);
   --color-tinta-3: var(--tinta-3);
   --color-borde: var(--borde);
   --color-acento: var(--acento);
   --color-acento-suave: var(--acento-suave);
-}
-
-html,
-body {
-  background: var(--pagina);
-  color: var(--tinta);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  font-variant-numeric: tabular-nums;
 }
 
 @media print {

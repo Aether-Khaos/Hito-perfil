@@ -1,81 +1,85 @@
-# Hito-Perfil — Perfil diagnóstico por hitos
+# Perfil Hito — Auditoría Académica
 
-Sistema de perfilado académico por hitos (Inicial → Intermedio → Final) de la Sociedad de
-Investigación de Ingeniería de Sistemas, Universidad Adventista de Bolivia.
+**[Ver demo en vivo](https://hito-perfil.vercel.app/)**
 
-Lee los libros de calificaciones del hito, normaliza cada pregunta con su puntaje máximo y genera:
+## Qué es
 
-- **Reporte global** de la cohorte (PDF imprimible y CSV para Excel).
-- **Perfil diagnóstico por estudiante**: preguntas no logradas, tipo de error, fortalezas y debilidades
-  específicas, recomendaciones de estudio, cuartil y posición por asignatura (PDF y CSV).
-- **Análisis por pregunta**: media, índice de dificultad (p), índice de discriminación (D), porcentaje
-  no logrado y taxonomía de errores.
-- **Progresión por hitos**: variación entre hitos, tendencia, cruce del umbral Logrado y brechas
-  recuperadas o nuevas; mientras solo hay un hito, el progreso dentro del hito (P1 → P3).
-- **Modo anónimo** (activado por defecto): códigos estables `E-XXX` en lugar de nombres, para proyectar
-  o exportar sin datos personales.
+Plataforma de auditoría académica que transforma datos crudos de rendimiento estudiantil en inteligencia accionable. Ingiere información desde Google Sheets, la procesa mediante un pipeline de análisis estadístico y pedagógico, la persiste en una base de datos relacional y la expone a través de dashboards interactivos para tres perfiles de usuario: coordinación académica, docentes y estudiantes.
 
-> Rama `feature/perfil-diagnostico`. Basada en `feature/diagnostico-por-reactivos`.
+## Para qué sirve
 
-## Ejecutar en local
+- **Diagnóstico individual**: cada estudiante recibe un perfil con fortalezas, debilidades, proyecciones y plan de acción generados dinámicamente desde sus notas reales.
+- **Análisis comparativo**: rankings, percentiles, distribución por rangos y comparación contra el promedio del curso.
+- **Progresión longitudinal**: seguimiento de la evolución de cada estudiante a través de los hitos Inicial → Intermedio → Avanzado.
+- **Auditoría institucional**: identificación temprana de estudiantes en riesgo, materias críticas y tendencias globales por promoción.
 
-```bash
-npm install
-npm run dev          # http://localhost:3000
-npm test             # 47 pruebas del motor
-```
+## Cómo funciona
 
-1. Elige el hito (Inicial, Intermedio o Final).
-2. Selecciona **«Calificaciones por pregunta…xlsx»** y, si lo tienes, **«Calificaciones por materia…xlsx»**
-   (se usa para la validación cruzada y para Habilidades blandas). Puedes elegir los dos a la vez.
-3. Pulsa **Analizar como Hito …**. Los datos quedan guardados en el navegador; repite con otro hito para
-   activar la progresión.
+El sistema opera en cuatro fases:
 
-No requiere base de datos ni credenciales. El enlace de Google Sheets es opcional: usa la cuenta de
-servicio de `keys.json` (o `GOOGLE_CREDENTIALS_JSON`) y, si no existe, la exportación pública del libro.
+1. **Ingesta**: un endpoint recibe la URL del Google Sheet, extrae el identificador del documento y se autentica contra la API de Google Sheets mediante una cuenta de servicio. Itera cada pestaña (una por materia), parsea las filas y normaliza los datos a un esquema canónico `{estudiante, correo, P1, P2, P3, promedio}`.
+2. **Procesamiento**: un motor de cálculo infiere la escala (0–20 o 0–100 según el máximo detectado), calcula estadísticas por materia (promedio, aprobados, regulares, en riesgo), construye perfiles individuales con análisis cualitativo generado a partir de los datos (mejor/peor materia, diferencia vs. curso, tendencia P1→P3, desviación entre materias) y genera proyecciones.
+3. **Persistencia**: los resultados se almacenan en una base de datos PostgreSQL serverless (Neon) con un esquema relacional normalizado que separa estudiantes, materias y notas, incluyendo metadatos de año y nivel de hito para permitir consultas históricas.
+4. **Presentación**: el frontend consume los datos desde endpoints que leen la base de datos, ofreciendo dashboards interactivos con visualizaciones SVG (gráficos de dona para distribución, gráficos de ondas secuenciales para progresión) y vistas segmentadas por materia, estudiante y comparativa.
 
-## Flujo
+## Arquitectura
 
-```
-Excel / Google Sheets ─▶ POST /api/perfiles (compacto)
-                           lib/leer-xlsx.ts      libro .xlsx sin dependencias
-                           lib/parser-libro.ts   encabezados, fila de máximos, vacíos vs. ceros
-                           lib/consolidado.ts    libro «por materia» (validación cruzada)
-                        ◀─ registros compactos por estudiante y asignatura
-Navegador ─▶ lib/analisis-hitos.ts  (estadística, ítems, errores, perfil, comparación entre hitos)
-          ─▶ lib/diagnostico.ts     (dominio por pregunta y competencias del catálogo)
-          ─▶ localStorage por hito  ─▶ vistas, /reporte (PDF) y CSV
-```
+El sistema sigue una arquitectura **cliente-servidor desacoplada** con las siguientes capas:
 
-## Método de análisis
+- **Capa de presentación**: aplicación Next.js 16 con App Router, componentes React 19, TypeScript estricto y Tailwind CSS. Renderizado híbrido (server components para estructura, client components para interactividad). Diseño responsive con sidebar desplegable y paleta académica funcional.
+- **Capa de API**: endpoints REST implementados como Route Handlers de Next.js. Tres rutas principales: ingesta de datos (`POST /api/perfiles`), consulta histórica (`GET /api/historial`) y progresión longitudinal (`GET /api/progresion`). Cada endpoint valida entrada, maneja errores y devuelve JSON tipado.
+- **Capa de dominio**: módulo de cálculo puro (sin dependencias de framework) que implementa la lógica estadística y pedagógica. Funciones puras, testeables y reutilizables tanto en backend como en frontend.
+- **Capa de persistencia**: PostgreSQL serverless (Neon) con driver HTTP (`@neondatabase/serverless`). Esquema relacional con integridad referencial, índices por año/nivel y operaciones por lote para minimizar latencia.
+- **Capa de integración externa**: cliente de Google Sheets API mediante `googleapis` con autenticación por cuenta de servicio y scope mínimo (`spreadsheets.readonly`).
 
-| Componente | Cálculo |
+**Patrones aplicados**: separación de responsabilidades por capas, stateless API, batch processing para operaciones de base de datos, type guards para validación en runtime, y renderizado progresivo con animaciones secuenciales.
+
+## Stack técnico
+
+| Componente | Tecnología |
 |---|---|
-| Dominio | puntos obtenidos / máximo de la pregunta × 100; celda vacía = sin evidencia (se excluye), cero = calificación |
-| Nivel | Escala UAB: Inicio 0–30, Proceso 31–50, Logrado 51–70, Destacado 71–89, Excepcional 90–100 |
-| Cuartiles | Interpolación lineal (tipo 7, igual que `CUARTIL.INC` de Excel) |
-| Dificultad p | Media del puntaje relativo de la pregunta (0–1) |
-| Discriminación D | p del 27 % superior − p del 27 % inferior (por total de la asignatura) |
-| Tipo de error | Banda de puntaje: conceptual < 31 %, procedimental 31–70 %, descuido 71–89 % (inferido) |
-| Riesgo | Alto: global < 31 % o ≥ 3 asignaturas en Inicio. Medio: global < 51 % o 2 en Inicio |
-| Progreso | Δ entre hitos (mejora > +2 pp, retroceso < −2 pp); P3 − P1 dentro del hito |
+| Framework | Next.js 16 (App Router, Turbopack) |
+| UI | React 19, TypeScript, Tailwind CSS 4 |
+| Persistencia | Neon (PostgreSQL serverless) |
+| Integración | Google Sheets API v4 |
+| Autenticación | Service Account (Google Cloud) |
+| Deployment | Vercel |
+| Visualización | SVG nativo (sin librerías externas) |
 
-El tipo de error es una inferencia sobre el puntaje, no una lectura de la respuesta escrita. Cuando el
-libro incluya columnas por ítem (`P1.1`, `MAT-1.2`), el motor calcula el dominio de cada competencia.
+## Modelo de datos
 
-## Estructura
+Esquema relacional normalizado en tercera forma normal:
 
-| Archivo | Rol |
-|---|---|
-| `lib/analisis-hitos.ts` | Estadística, análisis de ítems, taxonomía de errores, perfil, comparación entre hitos, CSV |
-| `lib/diagnostico.ts`, `lib/catalogo-reactivos.ts` | Motor por competencias y banco de 54 reactivos |
-| `lib/consolidado.ts` | Lector del libro «Calificaciones por materia» |
-| `components/Vistas.tsx` | Resumen global, por asignatura, perfil (lista + panel lateral) y progresión |
-| `components/PerfilDiagnostico.tsx` | Perfil individual (pantalla y PDF) |
-| `components/graficos.tsx` | Gráficos SVG con tooltip, paleta validada para daltonismo |
-| `app/reporte/page.tsx` | Reportes imprimibles global e individual |
+- **`estudiantes`**: identidad única por nombre, correo opcional, timestamps.
+- **`materias`**: catálogo de materias únicas.
+- **`notas`**: tabla de hechos con clave foránea compuesta (`estudiante_id`, `materia_id`, `evaluacion`), valor numérico, año y nivel de hito. Índices por año y nivel para consultas históricas eficientes.
 
-## Datos personales
+Las operaciones de escritura se realizan por lote mediante `unnest` para minimizar round-trips a la base de datos (de ~900 consultas individuales a ~6 consultas batch).
 
-Los libros con nombres y correos no se versionan. El análisis se guarda solo en el navegador del equipo
-que lo cargó. Para presentaciones, mantén el **modo anónimo** activo.
+## Seguridad
+
+- Credenciales gestionadas como variables de entorno en Vercel, nunca en el repositorio.
+- `.gitignore` configurado para excluir claves, archivos `.env` y artefactos de build.
+- Scope mínimo de Google API (`spreadsheets.readonly`).
+- Conexiones a base de datos con SSL obligatorio (`sslmode=require`).
+- Validación de tipos en runtime mediante type guards antes de procesar respuestas de API.
+
+## Escalabilidad
+
+- Arquitectura stateless: cada request es independiente, permitiendo escalado horizontal automático en Vercel.
+- Base de datos serverless con connection pooling y facturación por uso.
+- Procesamiento por lote para reducir latencia en operaciones masivas.
+- Componentes de visualización sin dependencias externas (SVG nativo), minimizando el bundle size.
+---
+
+## Diagnóstico por hitos (rama `feature/perfil-diagnostico`)
+
+Se suma a lo que ya tiene `main` (carga por Google Sheets, exámenes que se ordenan y guardan solos, historial, análisis y progresión):
+
+- **Cargar datos → 1. Calificaciones por pregunta (Excel):** sube «Calificaciones por pregunta» y «Calificaciones por materia» del hito (Inicial, Intermedio o Final). No requiere base de datos.
+- **Análisis → Resumen general:** tortas del curso (con opción de verlas como barras) y el listado general con el botón **Ver perfil**. El listado de cada materia (Dashboard) también tiene **Ver perfil**.
+- **Análisis → Estudiante:** además del perfil de `main`, muestra el diagnóstico por pregunta: *Lo que domina*, *Lo que le cuesta* y *Cómo debe reforzar* (temas pendientes con lo que le falta y qué estudiar). Botón para descargar el reporte del estudiante en PDF.
+- **Reportes:** reporte del curso e individual en PDF, y datos en Excel (CSV). Hay un PDF del curso sin nombres para presentar.
+- **Progresión:** muestra el avance entre los hitos cargados desde Excel.
+
+Pruebas: `npm test` (47 casos del motor de análisis).

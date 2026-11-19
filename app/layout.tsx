@@ -1,17 +1,22 @@
 import type { Metadata } from 'next';
+import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
+import { LayoutWrapper } from '@/components/LayoutWrapper';
+
+const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
+const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Hito-Perfil · Perfil diagnóstico por hitos',
-  description:
-    'Sistema de perfilado académico por hitos (Inicial, Intermedio y Final) — Sociedad de Investigación, Ingeniería de Sistemas, UAB.',
+  title: 'Perfil Hito · Auditoría Académica',
+  description: 'Panel de análisis de rendimiento académico',
 };
 
-// Sin fuentes remotas: la demostración funciona aunque la red del congreso no tenga internet.
-export default function RootLayout({ children }: LayoutProps<'/'>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="es">
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <LayoutWrapper>{children}</LayoutWrapper>
+      </body>
     </html>
   );
 }

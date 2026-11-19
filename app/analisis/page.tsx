@@ -1,0 +1,259 @@
+'use client';
+
+import { useState, useEffect, useMemo } from 'react';
+import { ResultadoAuditoria, SeccionActiva, PerfilEstudiante } from '@/lib/types';
+import { RubricasMateria, buscarRubricaPorMateria } from '@/lib/utils';
+import { MatterTabs } from '@/components/MatterTabs';
+import { MatterDashboard } from '@/components/dashboard/MatterDashboard';
+import { MatterProfile } from '@/components/profile/MatterProfile';
+import { StudentProfile } from '@/components/profile/StudentProfile';
+import { ResumenGeneral } from '@/components/ResumenGeneral';
+import { useHitos, buscarPerfil } from '@/lib/usar-hitos';
+
+const SECCIONES: Array<{ id: SeccionActiva; label: string }> = [
+  { id: 'general', label: 'Resumen general' },
+  { id: 'materia-dashboard', label: 'Dashboard' },
+  { id: 'perfil-materia', label: 'Materia' },
+  { id: 'estudiante', label: 'Estudiante' },
+];
+
+function esResultadoAuditoria(x: unknown): x is ResultadoAuditoria {
+  if (!x || typeof x !== 'object') return false;
+  const obj = x as Record<string, unknown>;
+  return (
+    typeof obj.success === 'boolean' &&
+    Array.isArray(obj.perfilesEstudiantes) &&
+    typeof obj.datosMaterias === 'object' &&
+    typeof obj.estadisticasMaterias === 'object'
+  );
+}
+
+function normalizarClave(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+export default function Analisis() {
+  const [resultado, setResultado] = useState<ResultadoAuditoria | null>(null);
+  const [seccionActiva, setSeccionActiva] = useState<SeccionActiva>('general');
+  const [materiaActiva, setMateriaActiva] = useState('');
+  const [estudianteActivo, setEstudianteActivo] = useState<PerfilEstudiante | null>(null);
+  const [buscoMateria, setBuscoMateria] = useState('');
+  const [buscoEstudiante, setBuscoEstudiante] = useState('');
+  const [buscoPerfilMateria, setBuscoPerfilMateria] = useState('');
+  const [filtro, setFiltro] = useState<{ anio: string; nivel: string } | null>(null);
+  const [rubricas, setRubricas] = useState<Record<string, RubricasMateria>>({});
+  const hitos = useHitos(filtro?.nivel);
+  const verPerfil = (nombre: string) => {
+    const est = resultado?.perfilesEstudiantes.find((e) => e.nombre === nombre);
+    if (est) {
+      setEstudianteActivo(est);
+      setSeccionActiva('estudiante');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const aplicarResultado = (data: ResultadoAuditoria) => {
+    setResultado(data);
+    const materias = Object.keys(data.datosMaterias || data.estadisticasMaterias || {});
+    if (materias.length > 0) setMateriaActiva(materias[0]);
+    if (data.perfilesEstudiantes.length > 0) setEstudianteActivo(data.perfilesEstudiantes[0]);
+  };
+
+  useEffect(() => {
+    const cached = sessionStorage.getItem('historial_data');
+    const filtroStr = sessionStorage.getItem('historial_filtro');
+    let filtroActual: { anio: string; nivel: string } | null = null;
+
+    if (cached) {
+      try {
+        const parsed: unknown = JSON.parse(cached);
+        if (esResultadoAuditoria(parsed)) {
+          aplicarResultado(parsed);
+        }
+        if (filtroStr) {
+          const f: unknown = JSON.parse(filtroStr);
+          if (f && typeof f === 'object' && 'anio' in f && 'nivel' in f) {
+            filtroActual = f as { anio: string; nivel: string };
+            setFiltro(filtroActual);
+          }
+        }
+      } catch (e) {
+        console.error('Error parseando caché:', e);
+      }
+    } else {
+      fetch('/api/historial')
+        .then((r) => r.json())
+        .then((d: unknown) => {
+          if (esResultadoAuditoria(d) && d.success) {
+            aplicarResultado(d);
+          }
+        })
+        .catch(() => {});
+    }
+
+    // Cargar rúbricas / preguntas guardadas desde Neon
+    const cargarRubricas = async () => {
+      try {
+        const params = new URLSearchParams();
+        if (filtroActual?.anio) params.set('anio', filtroActual.anio);
+        if (filtroActual?.nivel) params.set('nivel', filtroActual.nivel);
+
+        const res = await fetch(`/api/rubricas?${params.toString()}`);
+        const data = await res.json();
+
+        if (data?.rubricas && Object.keys(data.rubricas).length > 0) {
+          setRubricas(data.rubricas);
+          return;
+        }
+
+        // Respaldo: si el filtro no devolvió coincidencias, traer todas las rúbricas disponibles
+        if (filtroActual?.anio || filtroActual?.nivel) {
+          const resTodas = await fetch('/api/rubricas');
+          const dataTodas = await resTodas.json();
+          if (dataTodas?.rubricas && typeof dataTodas.rubricas === 'object') {
+            setRubricas(dataTodas.rubricas);
+          }
+        }
+      } catch (e) {
+        console.error('Error cargando rúbricas:', e);
+      }
+    };
+
+    cargarRubricas();
+  }, []);
+
+  // Lista única de materias combinando datosMaterias y estadisticasMaterias sin duplicados por tildes/espacios
+  const listaMaterias = useMemo(() => {
+    if (!resultado) return [];
+    const vistas = new Set<string>();
+    const unicas: string[] = [];
+
+    for (const m of [
+      ...Object.keys(resultado.datosMaterias || {}),
+      ...Object.keys(resultado.estadisticasMaterias || {}),
+    ]) {
+      const norm = normalizarClave(m);
+      if (!norm || vistas.has(norm)) continue;
+      vistas.add(norm);
+      unicas.push(m);
+    }
+    return unicas;
+  }, [resultado]);
+
+  // Resolver la clave exacta en datosMaterias y estadisticasMaterias aunque difieran en tildes/espacios
+  const claveMateriaResuelta = useMemo(() => {
+    if (!resultado || !materiaActiva) return materiaActiva;
+    const norm = normalizarClave(materiaActiva);
+    const enDatos = Object.keys(resultado.datosMaterias || {}).find(
+      (k) => normalizarClave(k) === norm
+    );
+    if (enDatos) return enDatos;
+    const enStats = Object.keys(resultado.estadisticasMaterias || {}).find(
+      (k) => normalizarClave(k) === norm
+    );
+    return enStats || materiaActiva;
+  }, [resultado, materiaActiva]);
+
+  if (!resultado || resultado.perfilesEstudiantes.length === 0) {
+    return (
+      <div className="bg-white border border-[#ced4da] rounded p-8 text-center space-y-3 max-w-2xl">
+        <p className="text-[#212529] font-semibold">No hay datos para mostrar.</p>
+        <p className="text-sm text-[#6c757d]">
+          Carga un Google Sheet en <strong>Cargar datos</strong> o selecciona un filtro en <strong>Historial</strong>.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 border-b border-[#ced4da]">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded bg-[#1177d1] flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10" />
+              <line x1="12" y1="20" x2="12" y2="4" />
+              <line x1="6" y1="20" x2="6" y2="14" />
+            </svg>
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-[#212529]">Análisis</h1>
+            <p className="text-xs text-[#6c757d]">
+              {filtro ? `Filtro: ${filtro.anio || 'todos'} / ${filtro.nivel || 'todos'}` : 'Todos los datos guardados'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex max-w-full gap-1 overflow-x-auto bg-[#f8f9fa] border border-[#ced4da] rounded p-1">
+          {SECCIONES.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => setSeccionActiva(s.id)}
+              className={`shrink-0 whitespace-nowrap px-4 py-1.5 rounded text-xs font-semibold transition-colors ${
+                seccionActiva === s.id
+                  ? 'bg-[#1177d1] text-white shadow-sm'
+                  : 'text-[#6c757d] hover:text-[#212529]'
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {(seccionActiva === 'materia-dashboard' || seccionActiva === 'perfil-materia') && (
+        <MatterTabs
+          materias={listaMaterias}
+          activa={materiaActiva}
+          onChange={(nueva) => {
+            setMateriaActiva(nueva);
+            setBuscoMateria('');
+            setBuscoPerfilMateria('');
+          }}
+        />
+      )}
+
+      {seccionActiva === 'general' && (
+        <ResumenGeneral resultado={resultado} analisis={hitos.actual} onVerPerfil={(est) => verPerfil(est.nombre)} />
+      )}
+
+      {seccionActiva === 'materia-dashboard' && claveMateriaResuelta && (
+        <MatterDashboard
+          resultado={resultado}
+          materiaActiva={claveMateriaResuelta}
+          busqueda={buscoMateria}
+          onBusquedaChange={setBuscoMateria}
+          onVerPerfil={verPerfil}
+        />
+      )}
+      {seccionActiva === 'perfil-materia' && claveMateriaResuelta && (
+        <MatterProfile
+          resultado={resultado}
+          materiaActiva={claveMateriaResuelta}
+          busqueda={buscoPerfilMateria}
+          onBusquedaChange={setBuscoPerfilMateria}
+          rubricasMateria={buscarRubricaPorMateria(rubricas, claveMateriaResuelta)}
+        />
+      )}
+      {seccionActiva === 'estudiante' && estudianteActivo && (
+        <StudentProfile
+          resultado={resultado}
+          estudianteActivo={estudianteActivo}
+          busqueda={buscoEstudiante}
+          onBusquedaChange={setBuscoEstudiante}
+          onSelect={setEstudianteActivo}
+          rubricas={rubricas}
+          diagnostico={(() => {
+            const perfil = buscarPerfil(hitos.actual, estudianteActivo.nombre);
+            return perfil && hitos.actual ? { analisis: hitos.actual, perfil } : null;
+          })()}
+        />
+      )}
+    </div>
+  );
+}
